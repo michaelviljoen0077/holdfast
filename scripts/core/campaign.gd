@@ -150,7 +150,7 @@ func waves_for(node: Dictionary) -> Array:
 		[["raiders", "raiders"], ["raiders", "draugr"], ["raiders", "draugr", "bowmen"]],
 		[["raiders", "draugr"], ["draugr", "bowmen", "raiders"], ["chieftain", "raiders", "berserkers"]],
 		[["draugr", "raiders"], ["draugr", "draugr", "bowmen"], ["berserkers", "raiders", "bowmen"], ["chieftain", "draugr", "bowmen"]],
-		[["raiders", "berserkers"], ["draugr", "draugr", "bowmen"], ["chieftain", "raiders", "draugr"], ["chieftain", "berserkers", "draugr", "bowmen"]],
+		[["raiders", "berserkers"], ["draugr", "draugr", "bowmen"], ["chieftain", "raiders", "bowmen"], ["jarl", "draugr", "bowmen"]],
 	]
 	var plan: Array = plans[5] if node.get("finale", false) else plans[mini(d, 4)]
 	var delays := [8.0, 38.0, 42.0, 45.0]

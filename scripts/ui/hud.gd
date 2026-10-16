@@ -19,6 +19,8 @@ var _end_title: Label
 var _end_detail: Label
 var _banner_t := 0.0
 var _hint: Label
+var _boss_box: VBoxContainer
+var _boss_bar: ProgressBar
 
 const INK := Color(0.96, 0.93, 0.86)
 const PANEL := Color(0.08, 0.07, 0.06, 0.78)
@@ -80,6 +82,26 @@ func setup(p_battle, p_director, p_commander) -> void:
 	_ability.focus_mode = Control.FOCUS_NONE
 	_ability.pressed.connect(func(): topple_pressed.emit())
 	root.add_child(_ability)
+
+	_boss_box = VBoxContainer.new()
+	_boss_box.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_boss_box.position = Vector2(-330, 150)
+	_boss_box.custom_minimum_size = Vector2(660, 0)
+	_boss_box.visible = false
+	_boss_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bname := _label(24, Color(0.75, 1.0, 0.92))
+	bname.text = "Haldor, the Drowned Jarl"
+	bname.add_theme_font_override("font", preload("res://scripts/ui/ui_theme.gd").title())
+	bname.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boss_box.add_child(bname)
+	_boss_bar = ProgressBar.new()
+	_boss_bar.show_percentage = false
+	_boss_bar.custom_minimum_size = Vector2(660, 14)
+	_boss_bar.add_theme_stylebox_override("background", _flat(Color(0.08, 0.07, 0.07, 0.85)))
+	_boss_bar.add_theme_stylebox_override("fill", _flat(Color(0.25, 0.75, 0.62)))
+	_boss_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_box.add_child(_boss_bar)
+	root.add_child(_boss_box)
 
 	_hint = _label(15, INK.darkened(0.25))
 	_hint.text = "LMB select  •  RMB move  •  F squad ability  •  Rest at a house to refit  •  T topple tower  •  WASD / Q E / wheel"
@@ -329,6 +351,13 @@ func _process(dt: float) -> void:
 		_banner.modulate.a = minf(a, appear)
 		_sub.modulate.a = _banner.modulate.a
 	_refresh_cards()
+	var boss = null
+	for u in battle.units:
+		if u.kind == "jarl" and not u.boarded:
+			boss = u
+	_boss_box.visible = boss != null and boss.alive()
+	if boss != null:
+		_boss_bar.value = lerpf(_boss_bar.value, boss.hp / boss.max_hp * 100.0, clampf(real_dt * 6.0, 0.0, 1.0))
 	var houses: int = battle.intact_houses().size()
 	var raiders: int = director.raiders_alive()
 	var next: float = director.time_to_next_wave()
@@ -337,7 +366,7 @@ func _process(dt: float) -> void:
 		lines += "\nNext wave in   %d s" % int(ceil(next))
 	_status.text = lines
 	_ability.disabled = battle.tower == null or battle.tower.collapsed
-	if Engine.time_scale < 0.9:
+	if commander.selected != null or commander.topple_armed or commander.ability_armed:
 		_hint.text = "Tactical pause  •  RMB move  •  F ability  •  Esc cancel"
 	else:
 		_hint.text = "LMB select  •  RMB move  •  F squad ability  •  Rest at a house to refit  •  T topple tower  •  WASD / Q E / wheel"

@@ -136,6 +136,7 @@ func _apply_stats(u: Unit) -> void:
 			u.damage = 2.0
 			u.cooldown = 1.35
 		"chieftain":
+			u.heavy = true
 			u.max_hp = 16.0
 			u.speed = 2.2
 			u.reach = 0.95
@@ -156,7 +157,17 @@ func _apply_stats(u: Unit) -> void:
 			u.cooldown = 3.0
 			u.attack_range = 8.0
 			u.can_rise = true
+		"jarl":
+			u.max_hp = 70.0
+			u.speed = 1.8
+			u.reach = 1.25
+			u.damage = 4.0
+			u.cooldown = 1.6
+			u.heavy = true
+			u.special_t = 6.0
+			u.summon_t = 10.0
 		"champion":
+			u.heavy = true
 			u.max_hp = 10.0
 			u.speed = 1.9
 			u.reach = 0.85
@@ -248,8 +259,14 @@ func intact_houses() -> Array:
 var _chieftains: Array = []
 
 
+var visuals := {}               # enemy kind -> character spec, for summoning
+var _slams: Array = []          # pending telegraphed slams {at, t, unit, decal}
+signal boss_spawned(unit)
+
+
 func _physics_process(dt: float) -> void:
 	_rebuild_grid()
+	_update_slams(dt)
 	_chieftains = units.filter(func(x): return x.kind == "chieftain" and x.alive() and not x.boarded)
 	for s in squads:
 		_update_squad(s, dt)
@@ -331,6 +348,8 @@ func _update_unit(u: Unit, dt: float) -> void:
 		return
 	var s: Squad = u.squad
 	u.attack_t -= dt
+	if u.kind == "jarl":
+		_boss_think(u, dt)
 	# A chieftain's war cry quickens every raider near him.
 	if u.team == RAIDERS and u.kind != "chieftain":
 		for c in _chieftains:
@@ -499,6 +518,8 @@ func _resolve_attack(u: Unit) -> void:
 		Sfx.play("clash", hit_pos, -4.0)
 		return
 	t.take_hit(u.damage, u.pos)
+	if u.kind == "jarl":
+		_cleave(u, t)
 	_puff(hit_pos, 3, Color(0.85, 0.8, 0.7, 0.8))
 	Sfx.play("thud", hit_pos, -3.0)
 	if u.damage >= 3.0:
@@ -1040,3 +1061,115 @@ func _blocks_missile(t, from: Vector2) -> bool:
 		"raider", "draugr":
 			return frontal and randf() < 0.25
 	return false
+
+
+# The Drowned Jarl ----------------------------------------------------------
+
+func _cleave(u: Unit, main_target) -> void:
+	var fwd := Vector2(sin(u.facing), cos(u.facing))
+	for o in _query(u.pos, u.reach * 1.2):
+		if o == main_target or o.team == u.team or not o.alive() or o.boarded:
+			continue
+		var to: Vector2 = o.pos - u.pos
+		if to.length() < u.reach * 1.15 and fwd.dot(to.normalized()) > 0.25:
+			o.take_hit(u.damage * 0.6, u.pos)
+	impact.emit(0.6, Vector3(u.pos.x, u.y, u.pos.y))
+
+
+func _boss_think(u: Unit, dt: float) -> void:
+	u.special_t -= dt
+	u.summon_t -= dt
+	var near := 0
+	for o in _query(u.pos, 2.4):
+		if o.team != u.team and o.alive():
+			near += 1
+	if u.special_t <= 0.0 and near >= 2 and u.swing_t < 0.0:
+		u.special_t = 11.0
+		u.attack_t = 2.0
+		if u.rig:
+			u.rig.once("1H_Melee_Attack_Jump_Chop", 0.8, 1.3)
+		var d := Decal.new()
+		d.texture_albedo = _ring_tex()
+		d.size = Vector3(5.4, 6.0, 5.4)
+		d.cull_mask = 1 << 1
+		d.modulate = Color(1.0, 0.25, 0.15, 0.0)
+		d.position = Vector3(u.pos.x, u.y, u.pos.y)
+		add_child(d)
+		_slams.append({"at": u.pos, "y": u.y, "t": 1.15, "unit": u, "decal": d})
+	elif u.summon_t <= 0.0 and u.target != null:
+		u.summon_t = 17.0
+		if u.rig:
+			u.rig.once("Spellcast_Summon", 1.0, 1.4)
+		message.emit("The Jarl calls the drowned dead")
+		for k in 4:
+			var at := u.pos + Vector2.from_angle(TAU * k / 4.0 + randf() * 0.5) * randf_range(1.2, 2.0)
+			var c: Vector2i = nav.nearest_walkable(at, 4)
+			if c.x < 0:
+				continue
+			_raise_draugr(u.squad, nav.cell_centre(c.x, c.y))
+
+
+func _raise_draugr(s: Squad, at: Vector2) -> void:
+	if not visuals.has("draugr"):
+		return
+	var fresh := Unit.new()
+	fresh.team = s.team
+	fresh.kind = "draugr"
+	fresh.squad = s
+	_apply_stats(fresh)
+	fresh.risen = true
+	fresh.setup(self, visuals["draugr"], unit_material, at, island.height_at(at.x, at.y))
+	fresh.facing = randf() * TAU
+	if fresh.rig:
+		fresh.rig.once("Spawn_Ground_Skeletons", 1.0)
+	fresh.attack_t = 1.5
+	s.units.append(fresh)
+	units.append(fresh)
+	_puff(Vector3(at.x, island.height_at(at.x, at.y) + 0.1, at.y), 8, Color(0.4, 0.55, 0.5, 0.85))
+
+
+func _update_slams(dt: float) -> void:
+	for i in range(_slams.size() - 1, -1, -1):
+		var sl: Dictionary = _slams[i]
+		sl["t"] -= dt
+		var d: Decal = sl["decal"]
+		var k := clampf(1.0 - sl["t"] / 1.15, 0.0, 1.0)
+		d.modulate.a = 0.35 + 0.6 * k
+		d.scale = Vector3(0.35 + 0.65 * k, 1.0, 0.35 + 0.65 * k)
+		if sl["t"] > 0.0:
+			continue
+		var u: Unit = sl["unit"]
+		var at: Vector2 = sl["at"]
+		if u.alive():
+			for o in _query(at, 2.8):
+				if o.team == u.team or not o.alive() or o.boarded:
+					continue
+				var dist: float = o.pos.distance_to(at)
+				if dist < 2.7:
+					o.take_hit(2.0, at)
+					o.knock += (o.pos - at).normalized() * (4.5 - dist)
+			var c3 := Vector3(at.x, sl["y"] + 0.1, at.y)
+			for k2 in 10:
+				_puff(c3 + Vector3(cos(k2 * TAU / 10.0), 0.0, sin(k2 * TAU / 10.0)) * 1.6, 2, Color(0.75, 0.68, 0.55, 0.85))
+			impact.emit(1.0, c3)
+			Sfx.play("crumble", c3, -2.0, 0)
+		d.queue_free()
+		_slams.remove_at(i)
+
+
+var _ring_cache: ImageTexture
+
+
+func _ring_tex() -> ImageTexture:
+	if _ring_cache:
+		return _ring_cache
+	var size := 128
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	for y in size:
+		for x in size:
+			var r := Vector2(x + 0.5 - size * 0.5, y + 0.5 - size * 0.5).length() / (size * 0.5)
+			var a: float = smoothstep(0.82, 0.9, r) * (1.0 - smoothstep(0.95, 1.0, r)) + 0.22 * (1.0 - smoothstep(0.0, 0.9, r)) * (1.0 if r < 0.92 else 0.0)
+			img.set_pixel(x, y, Color(1, 1, 1, clampf(a, 0.0, 1.0)))
+	img.generate_mipmaps()
+	_ring_cache = ImageTexture.create_from_image(img)
+	return _ring_cache

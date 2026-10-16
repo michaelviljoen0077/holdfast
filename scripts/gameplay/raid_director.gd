@@ -24,6 +24,7 @@ const CREWS := {
 	"draugr": {"kind": "draugr", "name": "The Drowned", "alt": "champion", "alt_every": 8},
 	"bowmen": {"kind": "draugr_archer", "name": "Drowned bowmen", "alt": "", "alt_every": 0},
 	"chieftain": {"kind": "raider", "name": "Chieftain's guard", "alt": "chieftain", "alt_every": 8},
+	"jarl": {"kind": "draugr", "name": "The Drowned Jarl", "alt": "jarl", "alt_every": 8},
 }
 var boat_material: Material
 var rng := RandomNumberGenerator.new()
@@ -389,6 +390,10 @@ func _announce(crew_type: String) -> void:
 				battle.message.emit("The Drowned rise from the sea")
 		"chieftain":
 			battle.message.emit("A raider chieftain comes ashore")
+			Sfx.play_ui("horn", -2.0)
+		"jarl":
+			battle.message.emit("Haldor, the Drowned Jarl, rises from the deep")
+			Sfx.play_ui("thunder", 0.0)
 			Sfx.play_ui("horn", -2.0)
 
 

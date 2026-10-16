@@ -16,6 +16,7 @@ const ANIMS := {
 	"chieftain": {"attack": ["2H_Melee_Attack_Spin", "2H_Melee_Attack_Chop", "2H_Melee_Attack_Slice"], "idle": "2H_Melee_Idle", "run": "Running_A"},
 	"draugr": {"attack": ["1H_Melee_Attack_Chop", "1H_Melee_Attack_Slice_Diagonal"], "idle": "Idle_Combat", "run": "Running_C", "walk": "Walking_D_Skeletons", "death": "Death_C_Skeletons"},
 	"draugr_archer": {"attack": ["1H_Ranged_Shoot"], "idle": "Idle", "aim": "1H_Ranged_Aiming", "run": "Running_A", "walk": "Walking_D_Skeletons", "death": "Death_C_Skeletons"},
+	"jarl": {"attack": ["2H_Melee_Attack_Chop", "2H_Melee_Attack_Slice"], "idle": "Idle_Combat", "run": "Running_A", "walk": "Walking_D_Skeletons"},
 	"champion": {"attack": ["1H_Melee_Attack_Chop", "1H_Melee_Attack_Jump_Chop"], "idle": "Idle_Combat", "run": "Running_A", "walk": "Walking_D_Skeletons"},
 }
 
@@ -58,6 +59,9 @@ var node: Node3D
 var body: MeshInstance3D
 var rig                        # UnitRig, when the visual is an animated character
 var can_rise := false          # draugr reassemble once after being cut down
+var heavy := false             # barely moved by knockback (bosses, champions)
+var special_t := 0.0           # boss: seconds until the next slam
+var summon_t := 0.0            # boss: seconds until the next summoning
 var risen := false
 
 
@@ -115,7 +119,7 @@ func take_hit(amount: float, from: Vector2) -> void:
 	hp -= amount
 	flash = 1.0
 	var away := (pos - from).normalized()
-	knock += away * 1.6
+	knock += away * (0.25 if heavy else 1.6)
 	if hp <= 0.0:
 		state = State.DEAD
 		dead_t = 0.0
@@ -124,7 +128,7 @@ func take_hit(amount: float, from: Vector2) -> void:
 		if rig:
 			var a := _anims()
 			rig.die(a["death"] if a.has("death") else ("Death_A" if randf() < 0.5 else "Death_B"))
-	elif rig and swing_t < 0.0:
+	elif rig and swing_t < 0.0 and not heavy:
 		rig.once("Hit_A" if randf() < 0.5 else "Hit_B", 1.5, 0.3)
 
 
