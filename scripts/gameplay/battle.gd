@@ -196,6 +196,8 @@ func _apply_stats(u: Unit) -> void:
 		u.damage *= 1.3
 	if u.team == RAIDERS and boon("hallowed"):
 		u.can_rise = false
+	if u.team == RAIDERS:
+		u.max_hp *= Campaign.enemy_toughness()
 	# Veteran squads: tougher and harder-hitting per level.
 	var lvl: int = u.squad.level if u.squad != null else 1
 	u.max_hp *= 1.0 + 0.3 * (lvl - 1)

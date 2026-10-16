@@ -830,12 +830,12 @@ func _continue_campaign() -> void:
 		if s.team == Battle.PLAYER and s.has_meta("roster_id"):
 			survivors[s.get_meta("roster_id")] = s.alive_count()
 	if mission == "assault":
-		var won_a: bool = director.burned() == director.objectives.size()
+		var won_a: bool = director.won
 		Campaign.finish_assault(won_a, director.burned(), director.objectives.size(), battle.freed, survivors, battle.stats["slain"], battle.stats["lost"])
 		Engine.time_scale = 1.0
 		Fader.go("res://scenes/camp.tscn")
 		return
-	var won: bool = director.raiders_alive() == 0 and survivors.values().any(func(v): return v > 0)
+	var won: bool = director.won
 	Campaign.finish_island(won, battle.intact_houses().size(), battle.houses.size(), survivors, battle.stats["slain"], battle.stats["lost"], battle.stats.get("boats", 0))
 	Engine.time_scale = 1.0
 	Fader.go("res://scenes/camp.tscn")

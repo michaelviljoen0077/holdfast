@@ -344,6 +344,29 @@ func _refresh() -> void:
 			rec.add_child(b)
 		_roster_box.add_child(UI.label("Recruit a new squad", 16, UI.INK_DIM))
 		_roster_box.add_child(rec)
+	_roster_box.add_child(UI.label("Supplies", 16, UI.INK_DIM))
+	var sup := HBoxContainer.new()
+	sup.add_theme_constant_override("separation", 8)
+	var tb := Button.new()
+	tb.text = "+5 timber  %dg  (have %d)" % [Campaign.COST_TIMBER, int(Campaign.timber())]
+	tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tb.add_theme_font_size_override("font_size", 15)
+	tb.disabled = Campaign.gold < Campaign.COST_TIMBER
+	tb.pressed.connect(func():
+		Campaign.buy_timber()
+		Sfx.play_ui("coins", -4.0))
+	sup.add_child(tb)
+	var vb := Button.new()
+	vb.text = "Veteran recruits  %s" % ("on" if Campaign.veteran_recruits else "%dg" % Campaign.COST_VETERANS)
+	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vb.add_theme_font_size_override("font_size", 15)
+	vb.disabled = Campaign.veteran_recruits or Campaign.gold < Campaign.COST_VETERANS
+	vb.tooltip_text = "New squads join already trained to two stars."
+	vb.pressed.connect(func():
+		Campaign.buy_veterans()
+		Sfx.play_ui("coins", -4.0))
+	sup.add_child(vb)
+	_roster_box.add_child(sup)
 	if not Campaign.boons.is_empty():
 		_roster_box.add_child(UI.label("Boons", 16, UI.INK_DIM))
 		var flow := HFlowContainer.new()
@@ -359,7 +382,7 @@ func _refresh() -> void:
 			tag.add_child(tl)
 			flow.add_child(tag)
 		_roster_box.add_child(flow)
-	var targetable := _picked >= 0
+	var targetable := _picked >= 0 and Campaign.column + 1 < Campaign.chart.size()
 	_sail.disabled = not targetable or Campaign.is_over()
 	if targetable:
 		_sail.text = "Set sail for %s" % Campaign.chart[Campaign.column + 1][_picked]["name"]
@@ -417,7 +440,9 @@ func _squad_card(r: Dictionary) -> PanelContainer:
 func _set_sail() -> void:
 	if _picked < 0:
 		return
-	Campaign.sail_to(_picked)
+	var go := _picked
+	_picked = -1
+	Campaign.sail_to(go)
 	Sfx.play_ui("horn", -10.0)
 	Fader.go("res://scenes/main.tscn")
 
@@ -506,6 +531,18 @@ func _show_boon_choice() -> void:
 	col.add_child(row)
 	for id in Campaign.boon_choice:
 		row.add_child(_boon_card(id))
+	var rr := Button.new()
+	rr.text = "Consult the runes again  ·  %d gold" % Campaign.COST_REROLL
+	rr.custom_minimum_size = Vector2(380, 50)
+	rr.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	rr.disabled = Campaign.gold < Campaign.COST_REROLL
+	rr.pressed.connect(func():
+		if Campaign.reroll_boons():
+			Sfx.play_ui("coins", -4.0)
+			_boon_layer.queue_free()
+			_show_boon_choice()
+			_refresh())
+	col.add_child(rr)
 	_boon_layer.modulate.a = 0.0
 	create_tween().tween_property(_boon_layer, "modulate:a", 1.0, 0.4)
 

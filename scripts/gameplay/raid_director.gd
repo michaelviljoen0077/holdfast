@@ -39,6 +39,7 @@ var wave_i := 0
 var wave_clock := 0.0
 var boats: Array = []      # {node, from, to, t, dur, squad, seats, state, unload_t, wade, wait}
 var finished := false
+var won := false
 var mode := "defend"           # defend | assault
 var objectives: Array = []     # assault: longhouses that must burn
 var garrison: Array = []       # assault: defending squads
@@ -410,6 +411,7 @@ func _check_end() -> void:
 			defeat.emit()
 		elif burned() == objectives.size():
 			finished = true
+			won = true
 			print("RESULT victory assault burned=%d/%d player_alive=%d freed=%d" % [burned(), objectives.size(), player_alive, battle.freed])
 			victory.emit()
 		return
@@ -426,6 +428,7 @@ func _check_end() -> void:
 				any_sailing = true
 		if not any_sailing:
 			finished = true
+			won = true
 			print("RESULT victory houses=%d player_alive=%d wave=%d boats_burned=%d" % [battle.intact_houses().size(), player_alive, wave_i, battle.stats.get("boats", 0)])
 			victory.emit()
 

@@ -16,6 +16,10 @@ const KINDS := {
 const COST_UNLOCK := 25
 const COST_TRAIN := [0, 30, 50]      # cost to reach level 2, 3
 const COST_RECRUIT := 45
+const COST_TIMBER := 15
+const COST_REROLL := 20
+const COST_VETERANS := 70
+var veteran_recruits := false
 const MAX_SQUADS := 4
 const BASE_TIMBER := 10.0
 const BOAT_BOUNTY := 8
@@ -85,6 +89,7 @@ func new_campaign(p_seed := -1) -> void:
 	active = true
 	rng.seed = p_seed if p_seed >= 0 else int(Time.get_unix_time_from_system())
 	gold = 20
+	veteran_recruits = false
 	roster.clear()
 	_next_id = 0
 	_add_squad("shield")
@@ -96,6 +101,7 @@ func new_campaign(p_seed := -1) -> void:
 	current = {}
 	last_result = {}
 	totals = {"islands": 0, "slain": 0, "lost": 0, "houses": 0}
+	veteran_recruits = false
 	boons = []
 	boon_choice = []
 	timber_bonus = 0.0
@@ -109,8 +115,9 @@ func _add_squad(kind: String) -> Dictionary:
 		if r["kind"] == kind:
 			count += 1
 	var title: String = KINDS[kind]["title"]
+	var start_level := 2 if (veteran_recruits and kind != "militia") else 1
 	var names := ["", " II", " III", " IV"]
-	var sq := {"id": _next_id, "name": title + names[mini(count, 3)], "kind": kind, "level": 1, "ability": false, "alive": true}
+	var sq := {"id": _next_id, "name": title + names[mini(count, 3)], "kind": kind, "level": start_level, "ability": false, "alive": true}
 	_next_id += 1
 	roster.append(sq)
 	return sq
@@ -130,7 +137,7 @@ func _build_chart() -> void:
 		var count := 1 if c == COLUMNS - 1 else rng.randi_range(2, 3)
 		for i in count:
 			# Gentle ramp: the first landfall is always the easiest.
-			var difficulty := 0 if c == 0 else maxi(0, c - 1 + (1 if rng.randf() < 0.4 else 0))
+			var difficulty := 0 if c == 0 else (c - 1 if c < 2 else c) + (1 if rng.randf() < 0.35 else 0)
 			var node := {
 				"seed": rng.randi_range(1, 99999),
 				"difficulty": difficulty,
@@ -311,7 +318,7 @@ func save_game() -> void:
 		return
 	var data := {"gold": gold, "roster": roster, "chart": chart, "column": column, "node_i": node_i,
 		"current": current, "last_result": last_result, "next_id": _next_id, "rng_state": rng.state, "totals": totals,
-		"boons": boons, "boon_choice": boon_choice, "timber_bonus": timber_bonus}
+		"boons": boons, "boon_choice": boon_choice, "timber_bonus": timber_bonus, "veterans": veteran_recruits}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
 		f.store_var(data)
@@ -340,6 +347,7 @@ func load_game() -> bool:
 	boons = data.get("boons", [])
 	boon_choice = data.get("boon_choice", [])
 	timber_bonus = data.get("timber_bonus", 0.0)
+	veteran_recruits = data.get("veterans", false)
 	# `current` must alias the chart entry so marking it visited sticks.
 	current = chart[column][node_i] if column >= 0 else {}
 	active = true
@@ -388,3 +396,34 @@ func finish_assault(won: bool, burned: int, total: int, freed: int, survivors: D
 		delete_save()
 	else:
 		save_game()
+
+
+func buy_timber() -> void:
+	if gold >= COST_TIMBER:
+		gold -= COST_TIMBER
+		timber_bonus += 5.0
+		changed.emit()
+		save_game()
+
+
+func buy_veterans() -> void:
+	if not veteran_recruits and gold >= COST_VETERANS:
+		gold -= COST_VETERANS
+		veteran_recruits = true
+		changed.emit()
+		save_game()
+
+
+func reroll_boons() -> bool:
+	if gold < COST_REROLL or boon_choice.is_empty():
+		return false
+	gold -= COST_REROLL
+	_offer_boons()
+	changed.emit()
+	save_game()
+	return true
+
+
+## Enemies harden as the voyage goes on.
+func enemy_toughness() -> float:
+	return 1.0 + 0.1 * maxi(column, 0) if active else 1.0
