@@ -13,8 +13,8 @@ signal squad_refitted(squad)
 signal ability_used(squad)
 signal impact(strength: float, at: Vector3)
 
-const REFIT_TIME := 3.0
-const REFIT_COOLDOWN := 25.0
+var REFIT_TIME := 3.0
+var REFIT_COOLDOWN := 25.0
 
 const PLAYER := 0
 const RAIDERS := 1
@@ -36,7 +36,14 @@ var _arrow_mesh: Mesh
 var _arrow_mat: StandardMaterial3D
 
 
+func boon(id: String) -> bool:
+	return Campaign.has_boon(id)
+
+
 func setup(p_island, p_nav, p_unit_material: ShaderMaterial) -> void:
+	if boon("second_wind"):
+		REFIT_TIME = 1.5
+		REFIT_COOLDOWN = 12.0
 	island = p_island
 	nav = p_nav
 	unit_material = p_unit_material
@@ -123,6 +130,12 @@ func _apply_stats(u: Unit) -> void:
 			u.damage = 2.0
 			u.cooldown = 2.1
 			u.attack_range = 11.0
+		"militia":
+			u.max_hp = 2.0
+			u.speed = 2.5
+			u.reach = 0.55
+			u.damage = 1.0
+			u.cooldown = 0.8
 		"raider":
 			u.max_hp = 3.0
 			u.speed = 2.1
@@ -173,6 +186,16 @@ func _apply_stats(u: Unit) -> void:
 			u.reach = 0.85
 			u.damage = 2.0
 			u.cooldown = 1.3
+	if u.team == PLAYER:
+		if boon("drillmaster"):
+			u.max_hp *= 1.2
+		if boon("swift_march"):
+			u.speed *= 1.15
+	if u.kind == "militia" and boon("militia_drill"):
+		u.max_hp *= 1.6
+		u.damage *= 1.3
+	if u.team == RAIDERS and boon("hallowed"):
+		u.can_rise = false
 	# Veteran squads: tougher and harder-hitting per level.
 	var lvl: int = u.squad.level if u.squad != null else 1
 	u.max_hp *= 1.0 + 0.3 * (lvl - 1)
@@ -381,8 +404,9 @@ func _update_unit(u: Unit, dt: float) -> void:
 		u.target = null
 	var hold_ground: bool = s.order == Squad.Order.MOVE and s.team == PLAYER
 	if u.attack_range > 0.0:
-		if u.target == null or u.pos.distance_to(u.target.pos) > u.attack_range or randf() < 0.01:
-			u.target = _nearest_enemy(u.pos, u.team, u.attack_range)
+		var rng_now := u.attack_range * (1.25 if u.y > 1.0 + (0.0 if u.target == null else u.target.y) else 1.0)
+		if u.target == null or u.pos.distance_to(u.target.pos) > rng_now or randf() < 0.01:
+			u.target = _nearest_enemy(u.pos, u.team, rng_now)
 	elif hold_ground:
 		u.target = _nearest_enemy(u.pos, u.team, 0.75)
 	else:
@@ -406,6 +430,15 @@ func _update_unit(u: Unit, dt: float) -> void:
 	# Desired position.
 	var goal := u.slot
 	var fighting := false
+	if siege != null and u.target == null and u.attack_range > 0.0 and boon("fire_bolts") and s.order != Squad.Order.MOVE:
+		if siege.distance_to(u.pos) <= u.attack_range and u.swing_t < 0.0 and u.attack_t <= 0.0:
+			u.swing_t = 0.0
+			u.swing_target = null
+			u.attack_t = u.cooldown
+			u.on_swing()
+			var sc: Vector2 = siege.centre()
+			u.facing = atan2(sc.x - u.pos.x, sc.y - u.pos.y)
+			_fire_bolt_at_structure(u, siege)
 	if siege != null and u.target == null and u.attack_range <= 0.0 and not s.charging() and s.order != Squad.Order.MOVE:
 		goal = siege.nearest_point(u.pos, 0.28)
 		if siege.distance_to(u.pos) <= u.reach + 0.12:
@@ -436,7 +469,7 @@ func _update_unit(u: Unit, dt: float) -> void:
 			else:
 				goal = u.pos
 		if u.swing_t < 0.0 and u.attack_t <= 0.0:
-			var in_range := dist <= (u.attack_range if u.attack_range > 0.0 else u.reach)
+			var in_range := dist <= (u.attack_range * 1.3 if u.attack_range > 0.0 else u.reach)
 			if in_range:
 				u.swing_t = 0.0
 				u.swing_target = u.target
@@ -565,11 +598,15 @@ func _resolve_attack(u: Unit) -> void:
 		else:
 			# A braced wall throws attackers back.
 			u.knock += (u.pos - t.pos).normalized() * 1.2
+		if t.kind == "shield" and t.team == PLAYER and boon("shield_bash"):
+			u.knock += (u.pos - t.pos).normalized() * 2.2
+			u.attack_t += 0.7
+			u.take_hit(0.5, t.pos)
 		t.on_block()
 		_spark(hit_pos)
 		Sfx.play("clash", hit_pos, -4.0)
 		return
-	t.take_hit(u.damage, u.pos)
+	t.take_hit(u.damage * _damage_mult(u, t), u.pos)
 	Sfx.play("slash", hit_pos, -9.0, 60)
 	if u.damage >= 2.0:
 		Sfx.play("heavy", hit_pos, -4.0, 50)
@@ -663,7 +700,7 @@ func _fire_arrow(u: Unit, t) -> void:
 	Sfx.play("bow", from, -8.0, 60)
 	var to := Vector3(aim.x, maxf(island.height_at(aim.x, aim.y), 0.0) + 0.25, aim.y)
 	arrows.append({"node": node, "from": from, "to": to, "t": 0.0, "dur": dur,
-		"arc": 0.2 + dist * 0.05, "target": t, "dmg": u.damage, "stuck_t": -1.0, "aim": aim})
+		"arc": 0.2 + dist * 0.05, "target": t, "dmg": u.damage, "stuck_t": -1.0, "aim": aim, "shooter": u})
 
 
 func _update_arrows(dt: float) -> void:
@@ -694,6 +731,14 @@ func _update_arrows(dt: float) -> void:
 		if a["t"] >= 1.0:
 			var tgt = a["target"]
 			var aim: Vector2 = a["aim"]
+			var hit_st = a.get("structure")
+			if hit_st != null:
+				if is_instance_valid(hit_st) and not hit_st.dead:
+					hit_st.take_damage(a["dmg"], aim)
+					hit_st.ignite()
+				node.queue_free()
+				arrows.remove_at(i)
+				continue
 			if tgt == null:
 				tgt = _nearest_enemy(aim, a.get("team", PLAYER), 0.5)
 			var from3: Vector3 = a["from"]
@@ -704,7 +749,11 @@ func _update_arrows(dt: float) -> void:
 				arrows.remove_at(i)
 				continue
 			if tgt != null and tgt.alive() and tgt.pos.distance_to(aim) < 0.5:
-				tgt.take_hit(a["dmg"], Vector2((a["from"] as Vector3).x, (a["from"] as Vector3).z))
+				var shooter = a.get("shooter")
+				var mult := 1.0
+				if shooter != null:
+					mult = _damage_mult(shooter, tgt)
+				tgt.take_hit(a["dmg"] * mult, Vector2((a["from"] as Vector3).x, (a["from"] as Vector3).z))
 				_puff(Vector3(tgt.pos.x, tgt.y + 0.3, tgt.pos.y), 3, Color(0.85, 0.8, 0.7, 0.8))
 				Sfx.play("arrow_hit", p, -5.0)
 				if not tgt.alive():
@@ -1079,7 +1128,9 @@ func use_ability(s: Squad, at := Vector2.INF) -> bool:
 			if shooters == 0:
 				return false
 	s.ability_t = info["duration"]
-	s.ability_cd = info["cooldown"]
+	if s.ability == "brace" and boon("iron_brace"):
+		s.ability_t = 10.0
+	s.ability_cd = info["cooldown"] * (0.7 if boon("war_horn") else 1.0)
 	ability_used.emit(s)
 	return true
 
@@ -1291,3 +1342,61 @@ func structure_at_collider(collider: Object):
 			return n
 		n = n.get_parent()
 	return null
+
+
+## Damage multipliers: fighting downhill, and boons.
+func _damage_mult(u, t) -> float:
+	var m := 1.0
+	if u.y - t.y > 0.6:
+		m *= 1.5 if (u.team == PLAYER and boon("eagle_perch")) else 1.25
+	if u.team == PLAYER and t.heavy and boon("giant_slayer"):
+		m *= 1.6
+	return m
+
+
+# Militia ---------------------------------------------------------------------
+
+var militia_called := false
+signal militia_raised(squad)
+
+
+func militia_size() -> int:
+	var n := intact_houses().size()
+	var size := clampi(n, 0, 7)
+	if boon("militia_drill"):
+		size *= 2
+	return size
+
+
+## The villagers take up knives and pitchforks. Once per battle.
+func call_militia(at: Vector2, facing: float):
+	if militia_called or militia_size() <= 0 or not visuals.has("militia"):
+		return null
+	militia_called = true
+	var s := spawn_squad(PLAYER, "militia", "Militia", visuals["militia"], at, militia_size(), facing)
+	s.cols = 4
+	for u in s.units:
+		_puff(Vector3(u.pos.x, u.y + 0.2, u.pos.y), 2, Color(0.9, 0.86, 0.75, 0.7))
+	Sfx.play_ui("horn", -8.0)
+	message.emit("The village takes up arms")
+	militia_raised.emit(s)
+	return s
+
+
+func _fire_bolt_at_structure(u: Unit, st) -> void:
+	var c: Vector2 = st.centre()
+	var dist := u.pos.distance_to(c)
+	var node := MeshInstance3D.new()
+	node.mesh = _arrow_mesh
+	var fm := StandardMaterial3D.new()
+	fm.emission_enabled = true
+	fm.emission = Color(1.0, 0.5, 0.15)
+	fm.emission_energy_multiplier = 3.0
+	fm.albedo_color = Color(1.0, 0.6, 0.2)
+	node.material_override = fm
+	add_child(node)
+	var from := Vector3(u.pos.x, u.y + 0.35, u.pos.y)
+	var to := Vector3(c.x, maxf(island.height_at(c.x, c.y), 0.0) + 0.6, c.y)
+	Sfx.play("bow", from, -8.0, 60)
+	arrows.append({"node": node, "from": from, "to": to, "t": 0.0, "dur": 0.4 + dist * 0.04, "arc": 0.6 + dist * 0.06,
+		"target": null, "dmg": u.damage, "stuck_t": -1.0, "aim": c, "team": u.team, "structure": st})

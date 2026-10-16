@@ -486,6 +486,7 @@ func _build_battle() -> void:
 	enemy_vis["jarl"] = {"scene": load(sk + "Skeleton_Warrior.glb"), "keep": [], "scale": CHAR_SCALE * 2.4,
 		"attach": {"handslot_r": sk + "Skeleton_Axe.gltf", "handslot_l": sk + "Skeleton_Shield_Large_A.gltf"}}
 	battle.visuals = enemy_vis
+	battle.visuals["militia"] = {"scene": load("res://assets/kaykit/characters/Rogue.glb"), "keep": ["Knife", "Knife_Offhand"], "scale": CHAR_SCALE * 0.95}
 	director.setup(battle, island, nav, Props.longboat(island_seed), enemy_vis, prop_mat, island_seed * 5 + 1)
 	if Capture.has("boss"):
 		director.waves = [{"delay": 1.0, "boats": ["jarl"]}]

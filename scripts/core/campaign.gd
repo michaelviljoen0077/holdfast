@@ -19,6 +19,49 @@ const MAX_SQUADS := 4
 const BASE_TIMBER := 10.0
 const BOAT_BOUNTY := 8
 var timber_bonus := 0.0
+var boons: Array = []              # chosen boon ids
+var boon_choice: Array = []        # three ids on offer after a won island
+
+const BOONS := {
+	"shield_bash": {"name": "Shield Bash", "desc": "When the Shieldwall blocks, the attacker is hurled back and staggered.", "glyph": "shield"},
+	"fire_bolts": {"name": "Fire Bolts", "desc": "Crossbows can set boats and walls alight from range.", "glyph": "flame"},
+	"drillmaster": {"name": "Drillmaster", "desc": "Every soldier in the warband has 20% more health.", "glyph": "star"},
+	"swift_march": {"name": "Swift March", "desc": "Squads move 15% faster.", "glyph": "boot"},
+	"second_wind": {"name": "Second Wind", "desc": "Refitting at a house is twice as fast and ready again sooner.", "glyph": "house"},
+	"stout_timber": {"name": "Stout Timber", "desc": "+8 timber on every island, and palisades are half again as tough.", "glyph": "wall"},
+	"giant_slayer": {"name": "Giant-slayer", "desc": "+60% damage against chieftains, champions and the Jarl.", "glyph": "axe"},
+	"war_horn": {"name": "War Horn", "desc": "Squad abilities recharge 30% faster.", "glyph": "horn"},
+	"plunder": {"name": "Plunder", "desc": "Burnt longboats pay double, and every raider slain is worth a coin.", "glyph": "coin"},
+	"hallowed": {"name": "Hallowed Blades", "desc": "The Drowned you cut down stay down.", "glyph": "skull"},
+	"iron_brace": {"name": "Iron Brace", "desc": "Brace holds for 10 seconds instead of 6.", "glyph": "shield"},
+	"eagle_perch": {"name": "Eagle's Perch", "desc": "The high-ground bonus is doubled.", "glyph": "eye"},
+	"militia_drill": {"name": "Village Drill", "desc": "Called militia are twice as many and tougher.", "glyph": "fork"},
+}
+
+
+func has_boon(id: String) -> bool:
+	return active and boons.has(id)
+
+
+func _offer_boons() -> void:
+	var pool := BOONS.keys().filter(func(k): return not boons.has(k))
+	var picks := []
+	for i in mini(3, pool.size()):
+		var k: String = pool[rng.randi() % pool.size()]
+		pool.erase(k)
+		picks.append(k)
+	boon_choice = picks
+
+
+func choose_boon(id: String) -> void:
+	if not boon_choice.has(id):
+		return
+	boons.append(id)
+	boon_choice = []
+	if id == "stout_timber":
+		timber_bonus += 8.0
+	changed.emit()
+	save_game()
 
 
 func timber() -> float:
@@ -52,6 +95,9 @@ func new_campaign(p_seed := -1) -> void:
 	current = {}
 	last_result = {}
 	totals = {"islands": 0, "slain": 0, "lost": 0, "houses": 0}
+	boons = []
+	boon_choice = []
+	timber_bonus = 0.0
 	changed.emit()
 	save_game()
 
@@ -180,6 +226,8 @@ func finish_island(won: bool, saved: int, total: int, survivors: Dictionary, sla
 	totals["slain"] += slain
 	totals["lost"] += lost
 	totals["houses"] += saved if won else 0
+	if has_boon("plunder"):
+		gold += boats * BOAT_BOUNTY + slain
 	var earned := saved * ISLAND_REWARD_PER_HOUSE if won else 0
 	if won and saved == total:
 		earned += 15
@@ -195,6 +243,8 @@ func finish_island(won: bool, saved: int, total: int, survivors: Dictionary, sla
 		"finale": current.get("finale", false)}
 	# Back at camp: the island is done, so a reload resumes on the chart.
 	current = {}
+	if won and not last_result["finale"]:
+		_offer_boons()
 	changed.emit()
 	if is_over():
 		delete_save()
@@ -258,7 +308,8 @@ func save_game() -> void:
 	if not active or Capture.has("capture"):
 		return
 	var data := {"gold": gold, "roster": roster, "chart": chart, "column": column, "node_i": node_i,
-		"current": current, "last_result": last_result, "next_id": _next_id, "rng_state": rng.state, "totals": totals}
+		"current": current, "last_result": last_result, "next_id": _next_id, "rng_state": rng.state, "totals": totals,
+		"boons": boons, "boon_choice": boon_choice, "timber_bonus": timber_bonus}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
 		f.store_var(data)
@@ -284,6 +335,9 @@ func load_game() -> bool:
 	_next_id = data["next_id"]
 	rng.state = data["rng_state"]
 	totals = data.get("totals", totals)
+	boons = data.get("boons", [])
+	boon_choice = data.get("boon_choice", [])
+	timber_bonus = data.get("timber_bonus", 0.0)
 	# `current` must alias the chart entry so marking it visited sticks.
 	current = chart[column][node_i] if column >= 0 else {}
 	active = true

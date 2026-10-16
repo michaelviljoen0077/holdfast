@@ -21,6 +21,7 @@ var _banner_t := 0.0
 var _hint: Label
 var _boss_box: VBoxContainer
 var _build_btn: Button
+var _militia_btn: Button
 var _boss_bar: ProgressBar
 
 const INK := Color(0.96, 0.93, 0.86)
@@ -98,6 +99,18 @@ func setup(p_battle, p_director, p_commander) -> void:
 			commander.select(null)
 			commander.builder.toggle())
 	root.add_child(_build_btn)
+	_militia_btn = Button.new()
+	_militia_btn.add_theme_font_size_override("font_size", 18)
+	_militia_btn.add_theme_stylebox_override("normal", _box(Color(0.18, 0.2, 0.12, 0.85), Color(0.6, 0.7, 0.4), 2))
+	_militia_btn.add_theme_stylebox_override("hover", _box(Color(0.24, 0.28, 0.14, 0.92), Color(0.85, 1.0, 0.55), 2))
+	_militia_btn.add_theme_stylebox_override("disabled", _box(Color(0.12, 0.11, 0.1, 0.6), Color(0.3, 0.28, 0.25), 2))
+	_militia_btn.add_theme_color_override("font_color", INK)
+	_militia_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_militia_btn.position = Vector2(-320, -202)
+	_militia_btn.custom_minimum_size = Vector2(290, 50)
+	_militia_btn.focus_mode = Control.FOCUS_NONE
+	_militia_btn.pressed.connect(func(): commander.call_militia())
+	root.add_child(_militia_btn)
 
 	_boss_box = VBoxContainer.new()
 	_boss_box.set_anchors_preset(Control.PRESET_CENTER_TOP)
@@ -383,6 +396,8 @@ func _process(dt: float) -> void:
 		lines += "\nNext wave in   %d s" % int(ceil(next))
 	_status.text = lines
 	_ability.disabled = battle.tower == null or battle.tower.collapsed
+	_militia_btn.disabled = battle.militia_called or battle.militia_size() <= 0
+	_militia_btn.text = "  Militia called  " if battle.militia_called else "  Call the militia [M]  ·  %d  " % battle.militia_size()
 	if commander.builder:
 		var bld = commander.builder
 		_build_btn.text = ("  Placing palisade  ·  %d timber left  " if bld.active else "  Build palisade [B]  ·  %d timber  ") % int(bld.timber)

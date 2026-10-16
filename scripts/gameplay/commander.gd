@@ -182,6 +182,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				select(mine[i])
 		elif k == KEY_T:
 			arm_topple()
+		elif k == KEY_M:
+			call_militia()
 		elif k == KEY_B and builder:
 			select(null)
 			builder.toggle()
@@ -452,3 +454,15 @@ func _draw_facing(at: Vector3, face: float) -> void:
 		_path_mesh.surface_set_color(col)
 		_path_mesh.surface_add_vertex(v)
 	_path_mesh.surface_end()
+
+
+func call_militia() -> void:
+	if battle.tower == null:
+		return
+	var tp: Vector3 = battle.tower.global_position
+	var c: Vector2i = nav.nearest_walkable(Vector2(tp.x + 2.0, tp.z + 1.0), 8)
+	if c.x < 0:
+		return
+	var s = battle.call_militia(nav.cell_centre(c.x, c.y), 0.0)
+	if s != null:
+		select(s)

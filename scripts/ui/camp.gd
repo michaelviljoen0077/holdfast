@@ -29,6 +29,8 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	if not Campaign.active:
 		Campaign.new_campaign()
+	if Capture.has("boontest"):
+		Campaign._offer_boons()
 	var bg := ColorRect.new()
 	bg.color = Color(0.09, 0.11, 0.13)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -91,6 +93,8 @@ func _ready() -> void:
 	_refresh()
 	if Campaign.is_over():
 		_show_end()
+	if not Campaign.boon_choice.is_empty() and not Campaign.is_over():
+		_show_boon_choice()
 	if Capture.has("autocampaign"):
 		_autopilot.call_deferred()
 
@@ -330,6 +334,21 @@ func _refresh() -> void:
 			rec.add_child(b)
 		_roster_box.add_child(UI.label("Recruit a new squad", 16, UI.INK_DIM))
 		_roster_box.add_child(rec)
+	if not Campaign.boons.is_empty():
+		_roster_box.add_child(UI.label("Boons", 16, UI.INK_DIM))
+		var flow := HFlowContainer.new()
+		flow.add_theme_constant_override("h_separation", 6)
+		flow.add_theme_constant_override("v_separation", 6)
+		for id in Campaign.boons:
+			var tag := PanelContainer.new()
+			tag.add_theme_stylebox_override("panel", UI.box(Color(0.2, 0.15, 0.08, 0.95), UI.GOLD, 1, 6))
+			var tl := UI.label(Campaign.BOONS[id]["name"], 15, UI.GOLD)
+			tl.tooltip_text = Campaign.BOONS[id]["desc"]
+			tag.tooltip_text = Campaign.BOONS[id]["desc"]
+			tag.mouse_filter = Control.MOUSE_FILTER_PASS
+			tag.add_child(tl)
+			flow.add_child(tag)
+		_roster_box.add_child(flow)
 	var targetable := _picked >= 0
 	_sail.disabled = not targetable or Campaign.is_over()
 	if targetable:
@@ -433,6 +452,9 @@ func _autopilot() -> void:
 		print("CAMPAIGN OVER won=%s" % [r.get("won", false) and r.get("finale", false)])
 		get_tree().quit()
 		return
+	if not Campaign.boon_choice.is_empty():
+		Campaign.choose_boon(Campaign.boon_choice[0])
+		print("BOON ", Campaign.boons)
 	for q in Campaign.living_squads():
 		Campaign.unlock(q)
 	if Campaign.can_recruit():
@@ -442,3 +464,87 @@ func _autopilot() -> void:
 	var options: Array = Campaign.reachable()
 	_picked = options[0]
 	_set_sail()
+
+
+# Boon choice -----------------------------------------------------------------
+
+var _boon_layer: Control
+
+
+func _show_boon_choice() -> void:
+	_boon_layer = Control.new()
+	_boon_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_boon_layer)
+	var shade := ColorRect.new()
+	shade.color = Color(0.02, 0.02, 0.03, 0.72)
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_boon_layer.add_child(shade)
+	var col := VBoxContainer.new()
+	col.set_anchors_preset(Control.PRESET_CENTER)
+	col.position = Vector2(-640, -250)
+	col.custom_minimum_size = Vector2(1280, 0)
+	col.add_theme_constant_override("separation", 24)
+	_boon_layer.add_child(col)
+	var t := UI.heading("The island holds. Choose a boon.", 40, UI.GOLD)
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(t)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 28)
+	col.add_child(row)
+	for id in Campaign.boon_choice:
+		row.add_child(_boon_card(id))
+	_boon_layer.modulate.a = 0.0
+	create_tween().tween_property(_boon_layer, "modulate:a", 1.0, 0.4)
+
+
+func _boon_card(id: String) -> Button:
+	var info: Dictionary = Campaign.BOONS[id]
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(360, 300)
+	b.add_theme_stylebox_override("normal", UI.box(Color(0.13, 0.1, 0.07, 0.97), UI.EDGE, 2, 12))
+	b.add_theme_stylebox_override("hover", UI.box(Color(0.2, 0.14, 0.08, 0.98), UI.GOLD, 3, 12))
+	b.add_theme_stylebox_override("pressed", UI.box(Color(0.28, 0.18, 0.08, 1.0), UI.GOLD, 3, 12))
+	var v := VBoxContainer.new()
+	v.set_anchors_preset(Control.PRESET_FULL_RECT)
+	v.offset_left = 24
+	v.offset_right = -24
+	v.offset_top = 24
+	v.offset_bottom = -24
+	v.add_theme_constant_override("separation", 14)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(v)
+	var emblem := _Emblem.new()
+	emblem.letter = String(info["name"]).substr(0, 1)
+	emblem.custom_minimum_size = Vector2(0, 96)
+	emblem.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(emblem)
+	var n := UI.heading(info["name"], 26, UI.GOLD)
+	n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(n)
+	var d := UI.label(info["desc"], 19, UI.INK)
+	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	d.custom_minimum_size = Vector2(300, 0)
+	v.add_child(d)
+	b.pressed.connect(func():
+		Campaign.choose_boon(id)
+		Sfx.play_ui("cleared", -4.0)
+		var tw := create_tween()
+		tw.tween_property(_boon_layer, "modulate:a", 0.0, 0.3)
+		tw.tween_callback(_boon_layer.queue_free)
+		_refresh())
+	return b
+
+
+class _Emblem extends Control:
+	var letter := "?"
+
+	func _draw() -> void:
+		var c := size * 0.5
+		draw_circle(c, 44.0, Color(0.25, 0.17, 0.08))
+		draw_arc(c, 44.0, 0, TAU, 48, Color(1.0, 0.8, 0.42), 3.0, true)
+		draw_arc(c, 37.0, 0, TAU, 48, Color(1.0, 0.8, 0.42, 0.4), 1.5, true)
+		var f := UI.title()
+		var w := f.get_string_size(letter, HORIZONTAL_ALIGNMENT_LEFT, -1, 46).x
+		draw_string(f, c + Vector2(-w * 0.5, 16), letter, HORIZONTAL_ALIGNMENT_LEFT, -1, 46, Color(1.0, 0.85, 0.5))
