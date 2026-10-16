@@ -55,6 +55,7 @@ const ABILITIES := {
 	"brace": {"name": "Brace", "cooldown": 22.0, "duration": 6.0, "targeted": false},
 	"charge": {"name": "Charge", "cooldown": 20.0, "duration": 3.5, "targeted": true},
 	"volley": {"name": "Volley", "cooldown": 16.0, "duration": 0.0, "targeted": true},
+	"firestorm": {"name": "Firestorm", "cooldown": 24.0, "duration": 0.0, "targeted": true},
 }
 
 

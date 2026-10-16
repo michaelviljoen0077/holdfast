@@ -9,6 +9,7 @@ const ISLAND_REWARD_PER_HOUSE := 10
 
 const KINDS := {
 	"militia": {"title": "Freed Thralls", "size": 7, "ability": ""},
+	"priest": {"title": "Rune-priests", "size": 4, "ability": "Firestorm"},
 	"shield": {"title": "Shieldwall", "size": 9, "ability": "Brace"},
 	"sword": {"title": "Swordsmen", "size": 8, "ability": "Charge"},
 	"archer": {"title": "Crossbows", "size": 8, "ability": "Volley"},
@@ -223,8 +224,8 @@ func waves_for(node: Dictionary) -> Array:
 	var plans := [
 		[["raiders"], ["raiders", "raiders"]],
 		[["raiders"], ["raiders", "raiders"], ["raiders", "berserkers"]],
-		[["raiders", "raiders"], ["raiders", "draugr"], ["raiders", "draugr", "bowmen"]],
-		[["raiders", "draugr"], ["draugr", "bowmen", "raiders"], ["chieftain", "raiders", "berserkers"]],
+		[["raiders", "raiders"], ["torchbearers", "draugr"], ["raiders", "draugr", "bowmen"]],
+		[["raiders", "draugr"], ["draugr", "bowmen", "torchbearers"], ["chieftain", "raiders", "berserkers"]],
 		[["draugr", "raiders"], ["draugr", "draugr", "bowmen"], ["berserkers", "raiders", "bowmen"], ["chieftain", "draugr", "bowmen"]],
 		[["raiders", "berserkers"], ["draugr", "draugr", "bowmen"], ["chieftain", "raiders", "bowmen"], ["jarl", "draugr", "bowmen"]],
 	]

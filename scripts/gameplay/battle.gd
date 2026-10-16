@@ -101,6 +101,11 @@ func spawn_squad(team: int, kind: String, squad_name: String, visual, at: Vector
 			s.ability = "charge"
 		"archer":
 			s.ability = "volley"
+		"priest":
+			s.ability = "firestorm"
+			s.spacing = 0.6
+			s.engage_radius = 8.0
+			s.leash = 1.0
 	s.assign_slots(nav, true)
 	for u in s.units:
 		u.pos = u.slot
@@ -130,6 +135,19 @@ func _apply_stats(u: Unit) -> void:
 			u.damage = 2.0
 			u.cooldown = 2.1
 			u.attack_range = 11.0
+		"priest":
+			u.max_hp = 3.5
+			u.speed = 2.2
+			u.reach = 0.5
+			u.damage = 1.0
+			u.cooldown = 2.2
+			u.attack_range = 7.0
+		"torch":
+			u.max_hp = 2.5
+			u.speed = 2.3
+			u.reach = 0.55
+			u.damage = 0.6
+			u.cooldown = 1.1
 		"militia":
 			u.max_hp = 2.0
 			u.speed = 2.5
@@ -401,6 +419,10 @@ func _update_unit(u: Unit, dt: float) -> void:
 		return
 	var s: Squad = u.squad
 	u.attack_t -= dt
+	if u.kind == "priest":
+		_priest_heal(u, dt)
+	if u.kind == "torch" and _torch_think(u):
+		pass
 	if u.kind == "jarl":
 		_boss_think(u, dt)
 	# A chieftain's war cry quickens every raider near him.
@@ -698,6 +720,9 @@ func _update_hop(u: Unit, dt: float) -> void:
 # Arrows ------------------------------------------------------------------
 
 func _fire_arrow(u: Unit, t) -> void:
+	if u.kind == "priest":
+		_fire_rune(u, t)
+		return
 	var dist: float = u.pos.distance_to(t.pos)
 	var dur := 0.3 + dist * 0.035
 	# Lead the target, with some scatter.
@@ -795,9 +820,18 @@ func _update_houses(dt: float) -> void:
 		if raiders > 0:
 			h["hp"] -= dt * (0.35 + raiders * 0.15) * (0.6 if weather == "storm" else 1.0)
 			if not h["burning"]:
-				h["burning"] = true
-				h["fx"] = _make_fire(h)
-				message.emit("A house is burning!")
+				ignite_house(h)
+		elif h["burning"]:
+			h["hp"] -= dt * 0.3 * (0.6 if weather == "storm" else 1.0)
+			# Defenders at the door beat out the flames.
+			var helpers := 0
+			for o in _query(h["door"], 1.8):
+				if o.team == PLAYER and o.alive():
+					helpers += 1
+			if helpers > 0:
+				h["douse"] = h.get("douse", 0.0) + dt * helpers
+				if h["douse"] > 6.0:
+					_extinguish(h)
 		var node: MeshInstance3D = h["node"]
 		var burnt: float = 1.0 - h["hp"] / h["max_hp"]
 		node.set_instance_shader_parameter("charred", clampf(burnt * 1.1, 0.0, 1.0) if h["burning"] else 0.0)
@@ -1126,6 +1160,9 @@ func use_ability(s: Squad, at := Vector2.INF) -> bool:
 			for u in s.units:
 				u.charge_hits = {}
 			Sfx.play_ui("horn", -14.0)
+		"firestorm":
+			if not cast_firestorm(s, at):
+				return false
 		"volley":
 			var shooters := 0
 			for u in s.units:
@@ -1425,3 +1462,182 @@ func free_captives(pen) -> void:
 	message.emit("Captives freed: they take up arms with you")
 	Sfx.play_ui("cleared", -4.0)
 	captives_freed.emit(s)
+
+
+# Rune-priests -------------------------------------------------------------------
+
+var _heal_t := 0.0
+
+
+func _priest_heal(u: Unit, dt: float) -> void:
+	u.special_t -= dt
+	if u.special_t > 0.0:
+		return
+	u.special_t = 1.0
+	for o in _query(u.pos, 3.5):
+		if o.team == u.team and o.alive() and o.hp < o.max_hp and o != u:
+			o.hp = minf(o.hp + 0.3, o.max_hp)
+			if randf() < 0.25:
+				_emit(_sparks, Vector3(o.pos.x, o.y + 0.4, o.pos.y), 2, Color(0.5, 1.0, 0.7), 0.6)
+
+
+func _fire_rune(u: Unit, t) -> void:
+	var dist: float = u.pos.distance_to(t.pos)
+	var node := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.07
+	sm.height = 0.14
+	node.mesh = sm
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(0.6, 0.9, 1.0)
+	m.emission_enabled = true
+	m.emission = Color(0.4, 0.8, 1.0)
+	m.emission_energy_multiplier = 4.0
+	node.material_override = m
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(node)
+	var from := Vector3(u.pos.x, u.y + 0.45, u.pos.y)
+	var to := Vector3(t.pos.x, t.y + 0.3, t.pos.y)
+	Sfx.play("bow", from, -12.0, 60)
+	arrows.append({"node": node, "from": from, "to": to, "t": 0.0, "dur": 0.25 + dist * 0.03, "arc": 0.15,
+		"target": t, "dmg": u.damage, "stuck_t": -1.0, "aim": t.pos + t.vel * 0.3, "shooter": u})
+
+
+## Firestorm: a telegraphed rain of fire that burns foes and their timber.
+func cast_firestorm(s: Squad, at: Vector2) -> bool:
+	if Capture.has("capture"):
+		print("EVENT firestorm")
+	var caster = null
+	for u in s.units:
+		if u.alive() and u.pos.distance_to(at) < 13.0:
+			caster = u
+	if caster == null:
+		return false
+	for u in s.units:
+		if u.alive() and u.rig:
+			u.facing = atan2(at.x - u.pos.x, at.y - u.pos.y)
+			u.rig.once("Spellcast_Long", 1.0, 1.4)
+	var d := Decal.new()
+	d.texture_albedo = _ring_tex()
+	d.size = Vector3(4.6, 8.0, 4.6)
+	d.cull_mask = 1 << 1
+	d.modulate = Color(1.0, 0.55, 0.15, 0.85)
+	d.position = Vector3(at.x, island.height_at(at.x, at.y), at.y)
+	add_child(d)
+	var tw := create_tween()
+	tw.tween_property(d, "modulate:a", 0.0, 2.6)
+	tw.tween_callback(d.queue_free)
+	for k in 8:
+		var spot := at + Vector2.from_angle(randf() * TAU) * sqrt(randf()) * 2.1
+		get_tree().create_timer(0.7 + k * 0.17, false).timeout.connect(_fireball.bind(spot, s.team))
+	return true
+
+
+func _fireball(at: Vector2, team: int) -> void:
+	var gy: float = maxf(island.height_at(at.x, at.y), 0.0)
+	var node := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.16
+	sm.height = 0.32
+	node.mesh = sm
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(1.0, 0.6, 0.2)
+	m.emission_enabled = true
+	m.emission = Color(1.0, 0.45, 0.1)
+	m.emission_energy_multiplier = 6.0
+	node.material_override = m
+	add_child(node)
+	node.position = Vector3(at.x + 1.5, gy + 9.0, at.y - 1.0)
+	var tw := create_tween()
+	tw.tween_property(node, "position", Vector3(at.x, gy + 0.1, at.y), 0.45).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func():
+		node.queue_free()
+		var c3 := Vector3(at.x, gy + 0.2, at.y)
+		_emit(_sparks, c3, 10, Color(1.0, 0.6, 0.2), 3.0)
+		_puff(c3, 4, Color(0.4, 0.35, 0.3, 0.8))
+		Sfx.play("heavy", c3, -4.0, 30)
+		for o in _query(at, 1.1):
+			if o.team != team and o.alive() and o.pos.distance_to(at) < 1.0:
+				o.take_hit(1.5, at)
+		for st in structures:
+			if st.team != team and not st.dead and st.distance_to(at) < 1.2:
+				st.take_damage(4.0, at)
+				st.ignite())
+
+
+# Torchbearers -------------------------------------------------------------------
+
+## Raiders who hurl torches at walls and houses from a few paces away.
+func _torch_think(u: Unit) -> bool:
+	if u.attack_t > 0.0 or u.swing_t >= 0.0:
+		return false
+	var best = null
+	var best_pos := Vector2.ZERO
+	var best_d := 6.5
+	for st in structures:
+		if st.team == PLAYER and st.flammable and not st.dead and not st.burning:
+			var d: float = st.distance_to(u.pos)
+			if d < best_d:
+				best_d = d
+				best = st
+				best_pos = st.centre()
+	for h in houses:
+		if h["destroyed"] or h["burning"]:
+			continue
+		var d: float = (h["pos"] as Vector2).distance_to(u.pos)
+		if d < best_d:
+			best_d = d
+			best = h
+			best_pos = h["pos"]
+	if best == null:
+		return false
+	u.attack_t = 4.0
+	if Capture.has("capture"):
+		print("EVENT torch_thrown")
+	u.facing = atan2(best_pos.x - u.pos.x, best_pos.y - u.pos.y)
+	if u.rig:
+		u.rig.once("Throw", 1.3, 0.6)
+	var node: Node3D = (preload("res://scenes/props/torch.tscn") as PackedScene).instantiate()
+	add_child(node)
+	var from := Vector3(u.pos.x, u.y + 0.5, u.pos.y)
+	var to := Vector3(best_pos.x, island.height_at(best_pos.x, best_pos.y) + 0.8, best_pos.y)
+	node.position = from
+	var tw := create_tween()
+	tw.tween_method(func(k: float):
+		var p := from.lerp(to, k)
+		p.y += sin(k * PI) * 1.6
+		node.position = p
+		node.rotation.x = k * TAU * 2.0, 0.0, 1.0, 0.7)
+	tw.tween_callback(func():
+		node.queue_free()
+		if best is Dictionary:
+			ignite_house(best)
+		elif is_instance_valid(best) and not best.dead:
+			best.ignite())
+	return true
+
+
+func ignite_house(h: Dictionary) -> void:
+	if h["burning"] or h["destroyed"]:
+		return
+	h["burning"] = true
+	h["douse"] = 0.0
+	h["fx"] = _make_fire(h)
+	if Capture.has("capture"):
+		print("EVENT house_ignited")
+	message.emit("A house is burning!")
+
+
+func _extinguish(h: Dictionary) -> void:
+	h["burning"] = false
+	h["douse"] = 0.0
+	var fx = h.get("fx")
+	if fx != null and is_instance_valid(fx):
+		fx.queue_free()
+	h["fx"] = null
+	if Capture.has("capture"):
+		print("EVENT house_doused")
+	_puff(Vector3(h["pos"].x, (h["node"] as Node3D).position.y + 1.2, h["pos"].y), 8, Color(0.85, 0.85, 0.85, 0.7))
+	message.emit("The fire is out")

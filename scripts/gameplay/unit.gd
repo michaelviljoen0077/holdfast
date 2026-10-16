@@ -16,6 +16,8 @@ const ANIMS := {
 	"chieftain": {"attack": ["2H_Melee_Attack_Spin", "2H_Melee_Attack_Chop", "2H_Melee_Attack_Slice"], "idle": "2H_Melee_Idle", "run": "Running_A"},
 	"draugr": {"attack": ["1H_Melee_Attack_Chop", "1H_Melee_Attack_Slice_Diagonal"], "idle": "Idle_Combat", "run": "Running_C", "walk": "Walking_D_Skeletons", "death": "Death_C_Skeletons"},
 	"draugr_archer": {"attack": ["1H_Ranged_Shoot"], "idle": "Idle", "aim": "1H_Ranged_Aiming", "run": "Running_A", "walk": "Walking_D_Skeletons", "death": "Death_C_Skeletons"},
+	"priest": {"attack": ["Spellcast_Shoot"], "idle": "Idle", "aim": "Spellcasting", "run": "Running_A"},
+	"torch": {"attack": ["Throw"], "idle": "Idle", "run": "Running_B"},
 	"militia": {"attack": ["Dualwield_Melee_Attack_Stab", "Dualwield_Melee_Attack_Slice"], "idle": "Idle", "run": "Running_A"},
 	"jarl": {"attack": ["2H_Melee_Attack_Chop", "2H_Melee_Attack_Slice"], "idle": "Idle_Combat", "run": "Running_A", "walk": "Walking_D_Skeletons"},
 	"champion": {"attack": ["1H_Melee_Attack_Chop", "1H_Melee_Attack_Jump_Chop"], "idle": "Idle_Combat", "run": "Running_A", "walk": "Walking_D_Skeletons"},

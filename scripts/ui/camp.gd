@@ -335,7 +335,7 @@ func _refresh() -> void:
 	if Campaign.living_squads().size() < Campaign.MAX_SQUADS:
 		var rec := HBoxContainer.new()
 		rec.add_theme_constant_override("separation", 8)
-		for kind in ["shield", "sword", "archer"]:
+		for kind in ["shield", "sword", "archer", "priest"]:
 			var b := Button.new()
 			b.text = "+ %s  %dg" % [Campaign.KINDS[kind]["title"], Campaign.COST_RECRUIT]
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL

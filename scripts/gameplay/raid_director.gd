@@ -26,13 +26,14 @@ const CREWS := {
 	"bowmen": {"kind": "draugr_archer", "name": "Drowned bowmen", "alt": "", "alt_every": 0},
 	"chieftain": {"kind": "raider", "name": "Chieftain's guard", "alt": "chieftain", "alt_every": 8},
 	"jarl": {"kind": "draugr", "name": "The Drowned Jarl", "alt": "jarl", "alt_every": 8},
+	"torchbearers": {"kind": "raider", "name": "Torchbearers", "alt": "torch", "alt_every": 2},
 }
 var boat_material: Material
 var rng := RandomNumberGenerator.new()
 
 var waves := [
 	{"delay": 7.0, "boats": ["raiders", "raiders"]},
-	{"delay": 40.0, "boats": ["raiders", "draugr", "bowmen"]},
+	{"delay": 40.0, "boats": ["torchbearers", "draugr", "bowmen"]},
 	{"delay": 45.0, "boats": ["chieftain", "raiders", "draugr"]},
 ]
 var wave_i := 0
@@ -454,6 +455,8 @@ func _announce(crew_type: String) -> void:
 			if not _announced.has("_drowned"):
 				_announced["_drowned"] = true
 				battle.message.emit("The Drowned rise from the sea")
+		"torchbearers":
+			battle.message.emit("Torchbearers! Douse burning houses by standing at the door")
 		"chieftain":
 			battle.message.emit("A raider chieftain comes ashore")
 			Sfx.play_ui("horn", -2.0)

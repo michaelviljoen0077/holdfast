@@ -629,6 +629,7 @@ func _build_battle() -> void:
 	var sword_vis := {"scene": knight, "keep": ["2H_Sword"], "scale": CHAR_SCALE}
 	var xbow_vis := {"scene": rogue, "keep": ["1H_Crossbow"], "scale": CHAR_SCALE}
 	var visuals := {"shield": shield_vis, "sword": sword_vis, "archer": xbow_vis,
+		"priest": {"scene": load("res://assets/kaykit/characters/Mage.glb"), "keep": ["2H_Staff"], "scale": CHAR_SCALE},
 		"militia": {"scene": load("res://assets/kaykit/characters/Rogue.glb"), "keep": ["Knife", "Knife_Offhand"], "scale": CHAR_SCALE * 0.95}}
 	# Campaign: field the living roster. Quick battle: one of each, fully trained in abilities.
 	if mission == "assault":
@@ -640,7 +641,8 @@ func _build_battle() -> void:
 	else:
 		plan = [{"kind": "shield", "name": "Shieldwall", "level": 1, "ability": true, "id": -1},
 			{"kind": "sword", "name": "Swordsmen", "level": 1, "ability": true, "id": -1},
-			{"kind": "archer", "name": "Crossbows", "level": 1, "ability": true, "id": -1}]
+			{"kind": "archer", "name": "Crossbows", "level": 1, "ability": true, "id": -1},
+			{"kind": "priest", "name": "Rune-priests", "level": 1, "ability": true, "id": -1}]
 	for i in mini(plan.size(), defender_spots.size()):
 		var spot: Dictionary = defender_spots[i]
 		var p: Dictionary = plan[i]
@@ -664,6 +666,8 @@ func _build_battle() -> void:
 		"champion": {"scene": load(sk + "Skeleton_Warrior.glb"), "keep": [], "scale": CHAR_SCALE * 1.25,
 			"attach": {"handslot_r": sk + "Skeleton_Axe.gltf", "handslot_l": sk + "Skeleton_Shield_Large_A.gltf"}},
 	}
+	enemy_vis["torch"] = {"scene": barbarian, "keep": [], "scale": CHAR_SCALE,
+		"attach": {"handslot_r": "res://scenes/props/torch.tscn"}}
 	enemy_vis["jarl"] = {"scene": load(sk + "Skeleton_Warrior.glb"), "keep": [], "scale": CHAR_SCALE * 2.4,
 		"attach": {"handslot_r": sk + "Skeleton_Axe.gltf", "handslot_l": sk + "Skeleton_Shield_Large_A.gltf"}}
 	battle.visuals = enemy_vis
@@ -786,9 +790,9 @@ func _autoplay(dt: float) -> void:
 				if score < tgt_score:
 					tgt_score = score
 					tgt = st
-			if tgt != null and s.kind != "archer" and commander.order_siege(s, tgt):
+			if tgt != null and not (s.kind in ["archer", "priest"]) and commander.order_siege(s, tgt):
 				continue
-			if tgt != null and s.kind == "archer" and c.distance_to(tgt.centre()) > 8.0:
+			if tgt != null and s.kind in ["archer", "priest"] and c.distance_to(tgt.centre()) > 8.0:
 				var ap: PackedVector2Array = nav.find_path(s.anchor, tgt.nearest_point(c, 6.0))
 				if not ap.is_empty():
 					s.set_path(ap, true)
@@ -800,7 +804,7 @@ func _autoplay(dt: float) -> void:
 					foe = u.pos
 			if foe != Vector2.INF:
 				var fd := c.distance_to(foe)
-				if (s.ability == "brace" and fd < 2.0) or (s.ability == "charge" and fd > 2.5 and fd < 9.0) or (s.ability == "volley" and fd < 10.0):
+				if (s.ability == "brace" and fd < 2.0) or (s.ability == "charge" and fd > 2.5 and fd < 9.0) or (s.ability == "volley" and fd < 10.0) or (s.ability == "firestorm" and fd < 11.0):
 					battle.use_ability(s, foe)
 					continue
 		# Badly hurt and not fighting: go refit at the nearest house.
@@ -828,7 +832,7 @@ func _autoplay(dt: float) -> void:
 		for h in battle.intact_houses():
 			if h["burning"] and (burning == null or c.distance_to(h["pos"]) < c.distance_to(burning["pos"])):
 				burning = h
-		if burning != null and s.kind != "archer" and c.distance_to(burning["door"]) > 2.0:
+		if burning != null and not (s.kind in ["archer", "priest"]) and c.distance_to(burning["door"]) > 2.0:
 			var bp: PackedVector2Array = nav.find_path(s.anchor, burning["door"])
 			if not bp.is_empty():
 				s.set_path(bp, true)
@@ -838,16 +842,20 @@ func _autoplay(dt: float) -> void:
 			if u.alive() and u.team == battle.RAIDERS and not u.boarded and u.hop_t < 0.0:
 				if c.distance_to(u.pos) < c.distance_to(best):
 					best = u.pos
-		if best == Vector2.INF or c.distance_to(best) < (6.0 if s.kind == "archer" else 2.0):
+		if best == Vector2.INF or c.distance_to(best) < (6.0 if s.kind in ["archer", "priest"] else 2.0):
 			continue
-		var goal: Vector2 = best if s.kind != "archer" else c.lerp(best, 1.0 - 7.0 / c.distance_to(best))
+		var goal: Vector2 = best if not (s.kind in ["archer", "priest"]) else c.lerp(best, 1.0 - 7.0 / c.distance_to(best))
 		var p: PackedVector2Array = nav.find_path(s.anchor, goal)
 		if not p.is_empty():
 			s.set_path(p, false)
 
 
-func _on_battle_end(_won: bool) -> void:
+var _victory_cam := false
+
+
+func _on_battle_end(won: bool) -> void:
 	ended = true
+	_victory_cam = won and not attract and not Capture.has("autoplay")
 	if Capture.has("campaign"):
 		get_tree().create_timer(2.0).timeout.connect(_continue_campaign)
 	if attract:
@@ -873,6 +881,17 @@ func _continue_campaign() -> void:
 
 
 func _process(dt: float) -> void:
+	if _victory_cam:
+		# A slow victory orbit around the heart of the island.
+		var real := dt / maxf(Engine.time_scale, 0.01)
+		var heart := Vector3.ZERO
+		if mission == "assault" and camp_spots.has("centre"):
+			var cc: Vector2 = camp_spots["centre"]
+			heart = Vector3(cc.x, island.height_at(cc.x, cc.y) + 0.8, cc.y)
+		elif tower:
+			heart = tower.position + Vector3(0, 1.2, 0)
+		var dist: float = lerpf(rig.distance, 20.0, clampf(real * 0.6, 0.0, 1.0))
+		rig.set_view(rad_to_deg(rig.yaw) + real * 7.0, lerpf(rad_to_deg(rig.pitch), -26.0, clampf(real, 0.0, 1.0)), dist, rig.position.lerp(heart, clampf(real * 1.5, 0.0, 1.0)), false)
 	if battle and director and not attract:
 		var ashore := 0
 		for u in battle.units:
