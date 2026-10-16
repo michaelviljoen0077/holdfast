@@ -536,6 +536,13 @@ func _populate_camp(enemy_vis: Dictionary) -> void:
 		var lh := preload("res://scripts/gameplay/longhouse.gd").new()
 		battle.add_structure(lh)
 		lh.build(nav, island, b["pos"], b["yaw"], Battle.RAIDERS)
+		var land: Vector2 = camp_spots["landings"][0]["pos"]
+		if lh.reachable_approach(land).is_empty():
+			# A hall nobody can reach would make the island unwinnable.
+			nav.unblock(lh._cells)
+			battle.structures.erase(lh)
+			lh.queue_free()
+			continue
 		lhs.append(lh)
 	camp_spots["longhouse_nodes"] = lhs
 	for p in camp_spots["pens"]:
@@ -609,7 +616,8 @@ func _build_battle() -> void:
 	var shield_vis := {"scene": knight, "keep": ["1H_Sword", "Rectangle_Shield"], "scale": CHAR_SCALE}
 	var sword_vis := {"scene": knight, "keep": ["2H_Sword"], "scale": CHAR_SCALE}
 	var xbow_vis := {"scene": rogue, "keep": ["1H_Crossbow"], "scale": CHAR_SCALE}
-	var visuals := {"shield": shield_vis, "sword": sword_vis, "archer": xbow_vis}
+	var visuals := {"shield": shield_vis, "sword": sword_vis, "archer": xbow_vis,
+		"militia": {"scene": load("res://assets/kaykit/characters/Rogue.glb"), "keep": ["Knife", "Knife_Offhand"], "scale": CHAR_SCALE * 0.95}}
 	# Campaign: field the living roster. Quick battle: one of each, fully trained in abilities.
 	if mission == "assault":
 		defender_spots = camp_spots.get("landings", defender_spots)
@@ -747,8 +755,7 @@ func _autoplay(dt: float) -> void:
 				if score < tgt_score:
 					tgt_score = score
 					tgt = st
-			if tgt != null and s.kind != "archer":
-				commander.order_siege(s, tgt)
+			if tgt != null and s.kind != "archer" and commander.order_siege(s, tgt):
 				continue
 			if tgt != null and s.kind == "archer" and c.distance_to(tgt.centre()) > 8.0:
 				var ap: PackedVector2Array = nav.find_path(s.anchor, tgt.nearest_point(c, 6.0))

@@ -66,8 +66,18 @@ func time_to_next_wave() -> float:
 	return maxf(waves[wave_i]["delay"] - wave_clock, 0.0)
 
 
+var _elapsed := 0.0
+
+
 func _physics_process(dt: float) -> void:
 	if finished:
+		return
+	_elapsed += dt
+	# Test safety net: a battle this long means something is stuck.
+	if Capture.has("capture") and _elapsed > 420.0:
+		finished = true
+		print("STALL mode=%s wave=%d raiders=%d burned=%d/%d" % [mode, wave_i, raiders_alive(), burned(), objectives.size()])
+		get_tree().quit()
 		return
 	# The next wave holds back while the shore is still crowded, so waves
 	# pressure the player without stacking into an unwinnable pile.
@@ -344,11 +354,10 @@ func _think() -> void:
 			continue
 		var wall = _blocking_wall(squad, centre, dest)
 		if wall != null:
-			var near: Vector2 = wall.nearest_point(centre, 0.6)
-			var wp: PackedVector2Array = nav.find_path(squad.anchor, near)
-			if not wp.is_empty():
+			var found: Array = wall.reachable_approach(squad.anchor)
+			if not found.is_empty():
 				squad.siege = wall
-				squad.set_path(wp, true)
+				squad.set_path(found[1], true)
 				continue
 		if squad.path.is_empty() or squad.destination().distance_to(dest) > 1.5 or squad.order == Squad.Order.HOLD:
 			var p: PackedVector2Array = nav.find_path(squad.anchor, dest)

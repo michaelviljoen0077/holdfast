@@ -423,17 +423,20 @@ func _finish_order() -> void:
 	select(null)
 
 
-func order_siege(s, st) -> void:
-	var near: Vector2 = st.nearest_point(s.anchor, 0.7)
-	var path: PackedVector2Array = nav.find_path(s.anchor, near)
-	if path.is_empty():
-		_flash_dest(Vector3(near.x, 0.0, near.y), Color(1.0, 0.35, 0.3))
-		return
+func order_siege(s, st) -> bool:
+	var found: Array = st.reachable_approach(s.anchor)
+	if found.is_empty():
+		var c: Vector2 = st.centre()
+		_flash_dest(Vector3(c.x, island.height_at(c.x, c.y), c.y), Color(1.0, 0.35, 0.3))
+		return false
+	var near: Vector2 = found[0]
+	var path: PackedVector2Array = found[1]
 	s.siege = st
 	s.set_path(path, true)
 	s.end_facing = INF
 	Sfx.play_ui("order", -6.0)
 	_flash_dest(Vector3(near.x, island.height_at(near.x, near.y), near.y), Color(1.0, 0.55, 0.25))
+	return true
 
 
 func _draw_facing(at: Vector3, face: float) -> void:

@@ -199,6 +199,8 @@ func _draw_chart() -> void:
 				_chart.draw_arc(p, size * 1.35, 0, TAU, 40, Color(INK_DARK, 0.7), 2.0, true)
 			if node["finale"]:
 				_draw_skull(p + Vector2(0, -4), 12.0)
+			elif node.get("type", "defend") == "assault":
+				_draw_flame(p + Vector2(0, -2), 13.0)
 			var name: String = node["name"]
 			var tw := font.get_string_size(name, HORIZONTAL_ALIGNMENT_CENTER, -1, 17).x
 			_chart.draw_string(font, p + Vector2(-tw * 0.5, size + 26), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, INK_DARK)
@@ -291,6 +293,10 @@ func _update_detail() -> void:
 		drowned = drowned or w["boats"].has("draugr") or w["boats"].has("bowmen")
 		chief = chief or w["boats"].has("chieftain")
 	var what := "The Jarl's own fleet." if node["finale"] else "%d waves, %d longboats." % [waves.size(), boats]
+	if node.get("type", "defend") == "assault":
+		var ap := Campaign.assault_plan(node)
+		_detail.text = "%s  —  A raider camp: %d longhouses to burn, %d captive pens, %d watchtowers." % [node["name"], ap["longhouses"], ap["pens"], ap["towers"]]
+		return
 	if drowned:
 		what += "  The Drowned walk here."
 	if chief:
@@ -303,6 +309,10 @@ func _default_detail() -> String:
 	if r.is_empty():
 		return "Pick the first island to defend. Harder islands pay the same per house but test the warband."
 	var line := "%s %d of %d houses saved, +%d gold." % ["Held." if r["won"] else "Lost.", r["saved"], r["total"], r["earned"]]
+	if r.get("assault", false):
+		line = "%s %d of %d longhouses burned, +%d gold." % ["The camp burns." if r["won"] else "Repulsed.", r["saved"], r["total"], r["earned"]]
+		if r.get("joined", "") != "":
+			line += "  %s join the warband." % r["joined"]
 	if not r["fallen"].is_empty():
 		line += "  Fallen: %s." % ", ".join(r["fallen"])
 	return line
@@ -376,11 +386,13 @@ func _squad_card(r: Dictionary) -> PanelContainer:
 	top.add_child(UI.label("★".repeat(r["level"]) + "☆".repeat(3 - r["level"]), 20, UI.GOLD))
 	var info: Dictionary = Campaign.KINDS[r["kind"]]
 	var desc := "%d soldiers  ·  %s %s" % [info["size"], info["ability"], "ready" if r["ability"] else "locked"]
+	if info["ability"] == "":
+		desc = "%d fighters  ·  freed from a raider camp" % info["size"]
 	v.add_child(UI.label(desc, 16, UI.INK_DIM))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	v.add_child(row)
-	if not r["ability"]:
+	if not r["ability"] and info["ability"] != "":
 		var ub := Button.new()
 		ub.text = "Teach %s  %dg" % [info["ability"], Campaign.COST_UNLOCK]
 		ub.disabled = not Campaign.can_unlock(r)
@@ -548,3 +560,12 @@ class _Emblem extends Control:
 		var f := UI.title()
 		var w := f.get_string_size(letter, HORIZONTAL_ALIGNMENT_LEFT, -1, 46).x
 		draw_string(f, c + Vector2(-w * 0.5, 16), letter, HORIZONTAL_ALIGNMENT_LEFT, -1, 46, Color(1.0, 0.85, 0.5))
+
+
+func _draw_flame(p: Vector2, s: float) -> void:
+	var flick := sin(_t * 9.0) * 1.5
+	var outer := PackedVector2Array([p + Vector2(0, -s * 1.5 - flick), p + Vector2(s * 0.75, -s * 0.2), p + Vector2(s * 0.5, s * 0.6),
+		p + Vector2(0, s * 0.8), p + Vector2(-s * 0.5, s * 0.6), p + Vector2(-s * 0.75, -s * 0.2)])
+	_chart.draw_colored_polygon(outer, Color(0.85, 0.3, 0.1))
+	var inner := PackedVector2Array([p + Vector2(0, -s * 0.7 - flick * 0.5), p + Vector2(s * 0.38, s * 0.1), p + Vector2(0, s * 0.6), p + Vector2(-s * 0.38, s * 0.1)])
+	_chart.draw_colored_polygon(inner, Color(1.0, 0.8, 0.3))

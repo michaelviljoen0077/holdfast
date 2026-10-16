@@ -261,7 +261,7 @@ func is_over() -> bool:
 # Camp purchases -------------------------------------------------------------
 
 func can_unlock(r: Dictionary) -> bool:
-	return r["alive"] and not r["ability"] and gold >= COST_UNLOCK
+	return r["alive"] and not r["ability"] and KINDS[r["kind"]]["ability"] != "" and gold >= COST_UNLOCK
 
 
 func unlock(r: Dictionary) -> void:

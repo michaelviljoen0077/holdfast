@@ -112,3 +112,32 @@ func _apply_shake(_amount: float) -> void:
 
 func _break_apart(_from: Vector2) -> void:
 	pass
+
+
+## Walkable standing spots around the footprint, nearest to `from` first.
+func approach_points(from: Vector2) -> Array:
+	var out := []
+	var ab := b - a
+	var along := ab.normalized() if ab.length_squared() > 1e-6 else Vector2.RIGHT
+	var side := along.orthogonal()
+	var half := ab.length() * 0.5
+	var c := centre()
+	for pad in [0.55, 0.9, 1.4]:
+		var reach: float = thickness * 0.5 + pad
+		for t in [-0.6, -0.3, 0.0, 0.3, 0.6]:
+			for sgn in [-1.0, 1.0]:
+				out.append(c + along * half * t + side * reach * sgn)
+		out.append(c + along * (half + pad))
+		out.append(c - along * (half + pad))
+	var ok := out.filter(func(p): return nav.is_walkable(nav.cell_of(p)))
+	ok.sort_custom(func(p, q): return p.distance_to(from) < q.distance_to(from))
+	return ok
+
+
+## First approach point the squad can actually path to, as [point, path].
+func reachable_approach(from: Vector2) -> Array:
+	for p in approach_points(from):
+		var path: PackedVector2Array = nav.find_path(from, p)
+		if not path.is_empty() and path[path.size() - 1].distance_to(p) < 0.8:
+			return [p, path]
+	return []

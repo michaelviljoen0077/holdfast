@@ -7,6 +7,7 @@ const UnitRig := preload("res://scripts/gameplay/unit_rig.gd")
 const SPECS := {
 	"shield": {"scene": "res://assets/kaykit/characters/Knight.glb", "keep": ["1H_Sword", "Rectangle_Shield"], "idle": "Idle"},
 	"sword": {"scene": "res://assets/kaykit/characters/Knight.glb", "keep": ["2H_Sword"], "idle": "2H_Melee_Idle"},
+	"militia": {"scene": "res://assets/kaykit/characters/Rogue.glb", "keep": ["Knife", "Knife_Offhand"], "idle": "Idle"},
 	"archer": {"scene": "res://assets/kaykit/characters/Rogue_Hooded.glb", "keep": ["1H_Crossbow"], "idle": "1H_Ranged_Aiming"},
 }
 
