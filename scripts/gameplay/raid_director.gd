@@ -13,14 +13,15 @@ var battle
 var island
 var nav
 var boat_mesh: Mesh
-var raider_mesh: Mesh
+var raider_visual
+var berserker_visual
 var boat_material: Material
 var rng := RandomNumberGenerator.new()
 
 var waves := [
 	{"delay": 7.0, "boats": 2},
 	{"delay": 40.0, "boats": 3},
-	{"delay": 45.0, "boats": 4},
+	{"delay": 45.0, "boats": 3},
 ]
 var wave_i := 0
 var wave_clock := 0.0
@@ -32,12 +33,13 @@ const SEATS := [Vector3(-0.28, 0.08, -1.3), Vector3(0.28, 0.08, -1.3), Vector3(-
 	Vector3(-0.28, 0.08, -0.06), Vector3(0.28, 0.08, -0.06), Vector3(-0.28, 0.08, 0.56), Vector3(0.28, 0.08, 0.56)]
 
 
-func setup(p_battle, p_island, p_nav, p_boat_mesh: Mesh, p_raider_mesh: Mesh, p_mat: Material, p_seed: int) -> void:
+func setup(p_battle, p_island, p_nav, p_boat_mesh: Mesh, p_raider_visual, p_berserker_visual, p_mat: Material, p_seed: int) -> void:
 	battle = p_battle
 	island = p_island
 	nav = p_nav
 	boat_mesh = p_boat_mesh
-	raider_mesh = p_raider_mesh
+	raider_visual = p_raider_visual
+	berserker_visual = p_berserker_visual
 	boat_material = p_mat
 	rng.seed = p_seed
 
@@ -57,6 +59,12 @@ func _physics_process(dt: float) -> void:
 		wave_i += 1
 		wave_clock = 0.0
 		wave_started.emit(wave_i, waves.size(), waves[wave_i - 1]["boats"])
+		if Capture.has("capture"):
+			var alive := 0
+			for sq in battle.squads:
+				if sq.team == battle.PLAYER:
+					alive += sq.alive_count()
+			print("WAVE %d launched: player_alive=%d houses=%d raiders_left=%d" % [wave_i, alive, battle.intact_houses().size(), raiders_alive()])
 	for b in boats:
 		_update_boat(b, dt)
 	_ai_t -= dt
@@ -131,7 +139,10 @@ func _spawn_boat(site: Dictionary, index: int) -> void:
 	node.position = Vector3(from.x, 0.02, from.y)
 	node.rotation.y = atan2(-dir.x, -dir.y)
 
-	var squad = battle.spawn_squad(battle.RAIDERS, "raider", "Raiders", raider_mesh, site["wade"], SEATS.size(), atan2(-dir.x, -dir.y))
+	# Later waves bring more berserkers.
+	var every := 4 if wave_i < 2 else 3
+	var squad = battle.spawn_squad(battle.RAIDERS, "raider", "Raiders", raider_visual, site["wade"], SEATS.size(), atan2(-dir.x, -dir.y),
+		{"kind": "berserker", "visual": berserker_visual, "every": every})
 	squad.engage_radius = 4.5
 	squad.leash = 6.0
 	for i in squad.units.size():
@@ -224,6 +235,7 @@ func _update_boat(b: Dictionary, dt: float) -> void:
 					var seat: Vector3 = node.global_transform * SEATS[i]
 					u.boarded = false
 					u.hop_t = 0.0
+					u.on_hop()
 					u.hop_from = seat
 					var off := Vector2(rng.randf_range(-0.9, 0.9), rng.randf_range(-0.9, 0.9))
 					var land: Vector2 = b["wade"] + off
@@ -328,8 +340,10 @@ func _check_end() -> void:
 	for s in battle.squads:
 		if s.team == battle.PLAYER:
 			player_alive += s.alive_count()
-	if player_alive == 0 or battle.intact_houses().is_empty():
+	# Burnt houses cost you the island's reward; only losing the army loses the battle.
+	if player_alive == 0:
 		finished = true
+		print("RESULT defeat houses=%d player_alive=%d wave=%d" % [battle.intact_houses().size(), player_alive, wave_i])
 		defeat.emit()
 		return
 	if wave_i >= waves.size() and raiders_alive() == 0:
@@ -339,4 +353,5 @@ func _check_end() -> void:
 				any_sailing = true
 		if not any_sailing:
 			finished = true
+			print("RESULT victory houses=%d player_alive=%d wave=%d" % [battle.intact_houses().size(), player_alive, wave_i])
 			victory.emit()

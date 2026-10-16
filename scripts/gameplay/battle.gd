@@ -9,6 +9,10 @@ const Tex := preload("res://scripts/core/tex.gd")
 signal squad_changed(squad)
 signal house_lost(house)
 signal message(text: String)
+signal squad_refitted(squad)
+
+const REFIT_TIME := 3.0
+const REFIT_COOLDOWN := 25.0
 
 const PLAYER := 0
 const RAIDERS := 1
@@ -36,7 +40,7 @@ func setup(p_island, p_nav, p_unit_material: ShaderMaterial) -> void:
 	unit_material = p_unit_material
 	_build_fx()
 	var am := BoxMesh.new()
-	am.size = Vector3(0.018, 0.018, 0.42)
+	am.size = Vector3(0.02, 0.02, 0.3)
 	_arrow_mesh = am
 	_arrow_mat = StandardMaterial3D.new()
 	_arrow_mat.albedo_color = Color(0.35, 0.26, 0.18)
@@ -46,7 +50,9 @@ func setup(p_island, p_nav, p_unit_material: ShaderMaterial) -> void:
 # --------------------------------------------------------------------------
 # Spawning
 
-func spawn_squad(team: int, kind: String, squad_name: String, mesh: Mesh, at: Vector2, count: int, facing := 0.0) -> Squad:
+## `visual` is a Mesh or a character spec {scene, keep, scale}. `alt` optionally
+## swaps every Nth unit for a variant: {kind, visual, every}.
+func spawn_squad(team: int, kind: String, squad_name: String, visual, at: Vector2, count: int, facing := 0.0, alt := {}) -> Squad:
 	var s := Squad.new()
 	s.team = team
 	s.kind = kind
@@ -64,13 +70,18 @@ func spawn_squad(team: int, kind: String, squad_name: String, mesh: Mesh, at: Ve
 		u.team = team
 		u.kind = kind
 		u.squad = s
+		var vis = visual
+		if not alt.is_empty() and i % int(alt["every"]) == int(alt["every"]) - 1:
+			u.kind = alt["kind"]
+			vis = alt["visual"]
 		_apply_stats(u)
 		var jitter := Vector2(randf_range(-0.3, 0.3), randf_range(-0.3, 0.3))
-		u.setup(self, mesh, unit_material, at + jitter, island.height_at(at.x + jitter.x, at.y + jitter.y))
+		u.setup(self, vis, unit_material, at + jitter, island.height_at(at.x + jitter.x, at.y + jitter.y))
 		u.facing = facing
 		s.units.append(u)
 		units.append(u)
 	s.speed = s.units[0].speed * 0.95
+	s.visual = visual
 	s.assign_slots(nav, true)
 	for u in s.units:
 		u.pos = u.slot
@@ -81,25 +92,37 @@ func spawn_squad(team: int, kind: String, squad_name: String, mesh: Mesh, at: Ve
 
 func _apply_stats(u: Unit) -> void:
 	match u.kind:
-		"spear":
-			u.max_hp = 4.0
-			u.speed = 2.3
-			u.reach = 0.62
+		"shield":
+			u.max_hp = 5.0
+			u.speed = 2.1
+			u.reach = 0.6
 			u.damage = 1.0
-			u.cooldown = 0.85
+			u.cooldown = 0.95
+		"sword":
+			u.max_hp = 4.0
+			u.speed = 2.35
+			u.reach = 0.72
+			u.damage = 2.0
+			u.cooldown = 1.25
 		"archer":
 			u.max_hp = 2.0
 			u.speed = 2.4
 			u.reach = 0.5
-			u.damage = 1.0
-			u.cooldown = 1.7
-			u.attack_range = 10.0
+			u.damage = 2.0
+			u.cooldown = 2.1
+			u.attack_range = 11.0
 		"raider":
 			u.max_hp = 3.0
 			u.speed = 2.1
-			u.reach = 0.58
+			u.reach = 0.6
 			u.damage = 1.0
 			u.cooldown = 1.0
+		"berserker":
+			u.max_hp = 4.0
+			u.speed = 2.45
+			u.reach = 0.72
+			u.damage = 2.0
+			u.cooldown = 1.35
 	u.hp = u.max_hp
 	u.attack_t = randf() * u.cooldown
 
@@ -108,13 +131,14 @@ func _make_banner(s: Squad) -> void:
 	var b := Node3D.new()
 	var pin := MeshInstance3D.new()
 	var q := QuadMesh.new()
-	q.size = Vector2(0.55, 0.55)
+	q.size = Vector2(0.05, 0.05)
 	pin.mesh = q
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.no_depth_test = true
+	m.fixed_size = true
 	m.render_priority = 2
 	m.albedo_texture = _banner_texture(s.color, s.kind)
 	pin.material_override = m
@@ -144,8 +168,10 @@ func _banner_texture(col: Color, kind: String) -> ImageTexture:
 				var ly := y + 0.5 - c.y
 				var glyph := false
 				match kind:
-					"spear":
+					"shield":
 						glyph = absf(lx) < 3.0 and absf(ly) < 13.0
+					"sword":
+						glyph = (absf(lx) < 3.0 and absf(ly) < 13.0) or (absf(ly + 3.0) < 2.6 and absf(lx) < 9.0)
 					"archer":
 						glyph = absf(absf(lx) - (ly + 10.0) * 0.6) < 2.6 and ly > -10.0 and ly < 8.0
 					_:
@@ -160,7 +186,7 @@ func _banner_texture(col: Color, kind: String) -> ImageTexture:
 
 
 func register_house(pos: Vector2, node: MeshInstance3D, door: Vector2) -> void:
-	houses.append({"pos": pos, "node": node, "hp": 14.0, "max_hp": 14.0, "burning": false,
+	houses.append({"pos": pos, "node": node, "hp": 22.0, "max_hp": 22.0, "burning": false,
 		"fx": null, "destroyed": false, "door": door})
 
 
@@ -227,6 +253,8 @@ func _update_squad(s: Squad, dt: float) -> void:
 	if not (s.order == Squad.Order.ATTACK_MOVE and engaged):
 		s.advance(dt, nav)
 	s.assign_slots(nav, before != s.order)
+	if s.team == PLAYER:
+		_update_refit(s, dt)
 
 
 func _update_unit(u: Unit, dt: float) -> void:
@@ -279,6 +307,7 @@ func _update_unit(u: Unit, dt: float) -> void:
 				u.swing_t = 0.0
 				u.swing_target = u.target
 				u.attack_t = u.cooldown * randf_range(0.85, 1.2)
+				u.on_swing()
 
 	# Attack animation and hit timing.
 	if u.swing_t >= 0.0:
@@ -289,6 +318,8 @@ func _update_unit(u: Unit, dt: float) -> void:
 			_resolve_attack(u)
 		if u.swing_t > 0.6:
 			u.swing_t = -1.0
+
+	goal = _detour(u, goal, dt)
 
 	# Steering.
 	var to_goal := goal - u.pos
@@ -365,13 +396,17 @@ func _resolve_attack(u: Unit) -> void:
 	var hit_pos := Vector3(t.pos.x, t.y + 0.3, t.pos.y)
 	# Defenders with shields block some blows, especially from the front.
 	var block_chance := 0.0
-	if t.kind == "spear":
-		var face := Vector2(sin(t.facing), cos(t.facing))
-		block_chance = 0.38 if face.dot((u.pos - t.pos).normalized()) > 0.3 else 0.1
-	elif t.kind == "raider":
-		block_chance = 0.15
+	var frontal := Vector2(sin(t.facing), cos(t.facing)).dot((u.pos - t.pos).normalized()) > 0.3
+	match t.kind:
+		"shield":
+			block_chance = 0.6 if frontal else 0.15
+		"raider":
+			block_chance = 0.22 if frontal else 0.05
+		"sword":
+			block_chance = 0.08
 	if randf() < block_chance:
 		t.knock += (t.pos - u.pos).normalized() * 0.7
+		t.on_block()
 		_spark(hit_pos)
 		Sfx.play("clash", hit_pos, -4.0)
 		return
@@ -450,7 +485,7 @@ func _update_hop(u: Unit, dt: float) -> void:
 
 func _fire_arrow(u: Unit, t) -> void:
 	var dist: float = u.pos.distance_to(t.pos)
-	var dur := 0.55 + dist * 0.06
+	var dur := 0.3 + dist * 0.035
 	# Lead the target, with some scatter.
 	var aim: Vector2 = t.pos + t.vel * dur * 0.9 + Vector2(randf_range(-0.3, 0.3), randf_range(-0.3, 0.3))
 	var node := MeshInstance3D.new()
@@ -458,11 +493,11 @@ func _fire_arrow(u: Unit, t) -> void:
 	node.material_override = _arrow_mat
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
-	var from := Vector3(u.pos.x, u.y + 0.45, u.pos.y)
+	var from := Vector3(u.pos.x, u.y + 0.35, u.pos.y) + Vector3(sin(u.facing), 0.0, cos(u.facing)) * 0.15
 	Sfx.play("bow", from, -8.0, 60)
 	var to := Vector3(aim.x, maxf(island.height_at(aim.x, aim.y), 0.0) + 0.25, aim.y)
 	arrows.append({"node": node, "from": from, "to": to, "t": 0.0, "dur": dur,
-		"arc": 1.0 + dist * 0.18, "target": t, "dmg": u.damage, "stuck_t": -1.0, "aim": aim})
+		"arc": 0.2 + dist * 0.05, "target": t, "dmg": u.damage, "stuck_t": -1.0, "aim": aim})
 
 
 func _update_arrows(dt: float) -> void:
@@ -518,7 +553,7 @@ func _update_houses(dt: float) -> void:
 			if o.team == RAIDERS and o.alive() and o.target == null and o.pos.distance_to(h["pos"]) < 1.9:
 				raiders += 1
 		if raiders > 0:
-			h["hp"] -= dt * (0.6 + raiders * 0.35)
+			h["hp"] -= dt * (0.35 + raiders * 0.15)
 			if not h["burning"]:
 				h["burning"] = true
 				h["fx"] = _make_fire(h)
@@ -737,3 +772,81 @@ func _spark(at: Vector3) -> void:
 
 func _splash(at: Vector3) -> void:
 	_emit(_puffs, at, 5, Color(0.9, 0.97, 1.0, 0.85), 1.0)
+
+
+func cheer(team: int) -> void:
+	for u in units:
+		if u.team == team and u.alive():
+			u.cheer()
+
+
+## Player squads resting at an intact house door recover their fallen and wounds.
+func _update_refit(s: Squad, dt: float) -> void:
+	s.refit_cooldown = maxf(s.refit_cooldown - dt, 0.0)
+	var wounded := s.alive_count() < s.units.size()
+	if not wounded:
+		for u in s.units:
+			if u.alive() and u.hp < u.max_hp:
+				wounded = true
+				break
+	var house = house_near(s.anchor, 1.6)
+	if not wounded or s.in_combat or s.order != Squad.Order.HOLD or house == null or s.refit_cooldown > 0.0:
+		s.refit_t = 0.0
+		return
+	s.refit_t += dt
+	if s.refit_t < REFIT_TIME:
+		return
+	s.refit_t = 0.0
+	s.refit_cooldown = REFIT_COOLDOWN
+	var door: Vector2 = house["door"]
+	for i in s.units.size():
+		var u: Unit = s.units[i]
+		if u.alive():
+			u.hp = u.max_hp
+			continue
+		# Fresh recruit steps out of the house.
+		var fresh := Unit.new()
+		fresh.team = s.team
+		fresh.kind = u.kind
+		fresh.squad = s
+		_apply_stats(fresh)
+		fresh.setup(self, s.visual, unit_material, door, island.height_at(door.x, door.y))
+		fresh.facing = s.facing
+		s.units[i] = fresh
+		units.append(fresh)
+		_puff(Vector3(door.x, island.height_at(door.x, door.y) + 0.3, door.y), 4, Color(0.9, 0.88, 0.8, 0.7))
+	s.assign_slots(nav, true)
+	squad_refitted.emit(s)
+
+
+func house_near(p: Vector2, r: float):
+	for h in houses:
+		if not h["destroyed"] and (h["door"] as Vector2).distance_to(p) < r:
+			return h
+	return null
+
+
+## Progress 0..1 of the current refit, for UI.
+func refit_progress(s: Squad) -> float:
+	return clampf(s.refit_t / REFIT_TIME, 0.0, 1.0)
+
+
+## Units steer straight at their goal when they can walk there in a line;
+## otherwise they follow a personal nav path around cliffs and water.
+func _detour(u: Unit, goal: Vector2, dt: float) -> Vector2:
+	u.upath_t -= dt
+	if u.pos.distance_to(goal) < 0.3 or nav.clear_line(u.pos, goal):
+		u.upath = PackedVector2Array()
+		return goal
+	if u.upath.is_empty() or u.upath_t <= 0.0 or u.upath_goal.distance_to(goal) > 1.2:
+		u.upath = nav.find_path(u.pos, goal)
+		u.upath_i = 1
+		u.upath_goal = goal
+		u.upath_t = 1.0 + randf() * 0.3
+		if u.upath.is_empty():
+			# Unreachable: give up on that enemy rather than grinding a cliff face.
+			u.target = null
+			return goal
+	while u.upath_i < u.upath.size() - 1 and u.pos.distance_to(u.upath[u.upath_i]) < 0.3:
+		u.upath_i += 1
+	return u.upath[mini(u.upath_i, u.upath.size() - 1)]

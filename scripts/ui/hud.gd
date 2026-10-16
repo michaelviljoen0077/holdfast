@@ -16,6 +16,7 @@ var _status: Label
 var _ability: Button
 var _end_panel: PanelContainer
 var _end_title: Label
+var _end_detail: Label
 var _banner_t := 0.0
 var _hint: Label
 
@@ -81,7 +82,7 @@ func setup(p_battle, p_director, p_commander) -> void:
 	root.add_child(_ability)
 
 	_hint = _label(15, INK.darkened(0.25))
-	_hint.text = "LMB select squad  •  RMB move  •  1-3 squads  •  T topple tower  •  WASD / Q E / wheel camera"
+	_hint.text = "LMB select squad  •  RMB move  •  Rest at a house to refit  •  T topple tower  •  WASD / Q E / wheel camera"
 	_hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hint.position = Vector2(24, -36)
 	root.add_child(_hint)
@@ -97,6 +98,9 @@ func setup(p_battle, p_director, p_commander) -> void:
 	_end_title = _label(44, INK)
 	_end_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(_end_title)
+	_end_detail = _label(22, INK.darkened(0.08))
+	_end_detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(_end_detail)
 	var again := _label(18, INK.darkened(0.2))
 	again.text = "Press R to defend this island again, N for a new island"
 	again.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -105,11 +109,15 @@ func setup(p_battle, p_director, p_commander) -> void:
 
 	battle.message.connect(func(t: String): show_banner(t, "", 2.5))
 	battle.house_lost.connect(func(_h): show_banner("A house has fallen", "", 2.5))
+	battle.squad_refitted.connect(func(s): show_banner("%s refitted" % s.name, "Fresh recruits join from the village", 2.0))
 	director.wave_started.connect(func(i: int, total: int, boats: int):
 		Sfx.play_ui("horn", -5.0)
 		show_banner("Wave %d of %d" % [i, total], "%d longboats sighted" % boats, 4.0))
-	director.victory.connect(func(): _end("The island holds"))
-	director.defeat.connect(func(): _end("The village is lost"))
+	director.victory.connect(func():
+		var saved: int = battle.intact_houses().size()
+		var total: int = battle.houses.size()
+		_end("The island holds" if saved == total else "Victory, at a cost", "%d of %d houses saved" % [saved, total]))
+	director.defeat.connect(func(): _end("Your warband has fallen", "%d of %d houses still stand" % [battle.intact_houses().size(), battle.houses.size()]))
 	commander.selection_changed.connect(func(_s): _refresh_cards())
 	show_banner("Hold the island", "Raiders are coming. Keep the village standing.", 5.0)
 	commander.ability_state.connect(func(armed: bool):
@@ -124,8 +132,9 @@ func show_banner(title: String, sub: String, secs: float) -> void:
 	_sub.modulate.a = 0.0
 
 
-func _end(title: String) -> void:
+func _end(title: String, detail := "") -> void:
 	_end_title.text = title
+	_end_detail.text = detail
 	_end_panel.visible = true
 	_end_panel.modulate.a = 0.0
 	create_tween().tween_property(_end_panel, "modulate:a", 1.0, 0.8)
@@ -229,4 +238,4 @@ func _process(dt: float) -> void:
 	if Engine.time_scale < 0.9:
 		_hint.text = "Tactical pause  •  RMB to order the selected squad  •  Esc to cancel"
 	else:
-		_hint.text = "LMB select squad  •  RMB move  •  1-3 squads  •  T topple tower  •  WASD / Q E / wheel camera"
+		_hint.text = "LMB select squad  •  RMB move  •  Rest at a house to refit  •  T topple tower  •  WASD / Q E / wheel camera"

@@ -19,6 +19,7 @@ const Commander := preload("res://scripts/gameplay/commander.gd")
 const Hud := preload("res://scripts/ui/hud.gd")
 
 static var island_seed := 7
+const CHAR_SCALE := 0.28
 
 var island
 var rig
@@ -335,7 +336,7 @@ func _build_settlement(scatter) -> void:
 		var clear: bool = absf(island.height_at(centre.x, centre.y) - tp.y) < 0.35 and island.flatness(centre.x, centre.y, 0.8) < 0.15
 		clear = clear and nav.is_walkable(nav.cell_of(centre)) and nav.component[nav.idx(nav.cell_of(centre))] == nav.component[nav.idx(nav.cell_of(Vector2(tp.x, tp.z) + Vector2(2.4, 0)))]
 		for p in placed.slice(1):
-			if Vector2(centre.x - p.x, centre.y - p.z).length() < 2.3:
+			if Vector2(centre.x - p.x, centre.y - p.z).length() < 2.9:
 				clear = false
 		for q in defender_spots:
 			if centre.distance_to(q["pos"]) < 2.6:
@@ -374,11 +375,13 @@ func _build_battle() -> void:
 	for h in house_records:
 		battle.register_house(h["pos"], h["node"], h["door"])
 
-	var blue := Color(0.20, 0.33, 0.62)
-	var gold := Color(0.92, 0.80, 0.42)
-	var spear_mesh := Props.soldier(blue, gold, 3)
-	var archer_mesh := Props.archer(Color(0.24, 0.42, 0.30), Color(0.85, 0.78, 0.55), 5)
-	var plan := [["spear", "Shieldwall", spear_mesh, 9], ["spear", "Spearmen", spear_mesh, 9], ["archer", "Archers", archer_mesh, 8]]
+	var knight := preload("res://assets/kaykit/characters/Knight.glb")
+	var rogue := preload("res://assets/kaykit/characters/Rogue_Hooded.glb")
+	var barbarian := preload("res://assets/kaykit/characters/Barbarian.glb")
+	var shield_vis := {"scene": knight, "keep": ["1H_Sword", "Rectangle_Shield"], "scale": CHAR_SCALE}
+	var sword_vis := {"scene": knight, "keep": ["2H_Sword"], "scale": CHAR_SCALE}
+	var xbow_vis := {"scene": rogue, "keep": ["1H_Crossbow"], "scale": CHAR_SCALE}
+	var plan := [["shield", "Shieldwall", shield_vis, 9], ["sword", "Swordsmen", sword_vis, 8], ["archer", "Crossbows", xbow_vis, 8]]
 	for i in mini(plan.size(), defender_spots.size()):
 		var spot: Dictionary = defender_spots[i]
 		battle.spawn_squad(Battle.PLAYER, plan[i][0], plan[i][1], plan[i][2], spot["pos"], plan[i][3], spot["facing"])
@@ -386,8 +389,11 @@ func _build_battle() -> void:
 	director = Director.new()
 	director.name = "RaidDirector"
 	add_child(director)
-	var raider_mesh := Props.soldier(Color(0.62, 0.16, 0.12), Color(0.9, 0.84, 0.7), 9, true)
-	director.setup(battle, island, nav, Props.longboat(island_seed), raider_mesh, prop_mat, island_seed * 5 + 1)
+	var raider_vis := {"scene": barbarian, "keep": ["1H_Axe", "Barbarian_Round_Shield"], "scale": CHAR_SCALE}
+	var berserk_vis := {"scene": barbarian, "keep": ["2H_Axe"], "scale": CHAR_SCALE * 1.05}
+	director.setup(battle, island, nav, Props.longboat(island_seed), raider_vis, berserk_vis, prop_mat, island_seed * 5 + 1)
+	director.victory.connect(func(): battle.cheer(Battle.PLAYER))
+	director.defeat.connect(func(): battle.cheer(Battle.RAIDERS))
 	if Capture.has("wave"):
 		director.waves[0]["delay"] = float(Capture.arg("wave"))
 
@@ -421,6 +427,29 @@ func _autoplay(dt: float) -> void:
 		if s.team != battle.PLAYER or s.is_dead() or s.order != 0:
 			continue
 		var c: Vector2 = battle._centroid(s)
+		# Badly hurt and not fighting: go refit at the nearest house.
+		if s.alive_count() * 2 < s.units.size() and not s.in_combat and s.refit_cooldown <= 0.0:
+			var home = null
+			for h in battle.intact_houses():
+				if home == null or c.distance_to(h["door"]) < c.distance_to(home["door"]):
+					home = h
+			if home != null and c.distance_to(home["door"]) > 1.2:
+				var hp: PackedVector2Array = nav.find_path(s.anchor, home["door"])
+				if not hp.is_empty():
+					s.set_path(hp, false)
+				continue
+			if home != null:
+				continue
+		# A burning house takes priority over chasing.
+		var burning = null
+		for h in battle.intact_houses():
+			if h["burning"] and (burning == null or c.distance_to(h["pos"]) < c.distance_to(burning["pos"])):
+				burning = h
+		if burning != null and s.kind != "archer" and c.distance_to(burning["door"]) > 2.0:
+			var bp: PackedVector2Array = nav.find_path(s.anchor, burning["door"])
+			if not bp.is_empty():
+				s.set_path(bp, true)
+				continue
 		var best := Vector2.INF
 		for u in battle.units:
 			if u.alive() and u.team == battle.RAIDERS and not u.boarded and u.hop_t < 0.0:
@@ -435,6 +464,17 @@ func _autoplay(dt: float) -> void:
 
 
 func _process(dt: float) -> void:
+	if Capture.has("dumpai") and Capture.frame() == int(Capture.arg("frames")) - 2:
+		for sq in battle.squads:
+			if sq.is_dead():
+				continue
+			var lines := []
+			for u in sq.units:
+				if u.alive():
+					lines.append("%s b=%s hop=%.1f pos=%s h=%.2f tgt=%s" % [u.kind, u.boarded, u.hop_t, u.pos, island.height_at(u.pos.x, u.pos.y), u.target != null])
+			print("SQUAD team=%d order=%d anchor=%s path=%d/%d alive=%d
+  %s" % [sq.team, sq.order, sq.anchor, sq.path_i, sq.path.size(), sq.alive_count(), "
+  ".join(lines)])
 	if battle:
 		scatter.update_tree_fade(battle.units, dt)
 	if Capture.has("autoplay") and battle:
@@ -449,7 +489,7 @@ func _process(dt: float) -> void:
 				n += 1
 		if n > 0:
 			c /= n
-			rig.set_view(rad_to_deg(rig.yaw), -38.0, 24.0, Vector3(c.x, island.height_at(c.x, c.y), c.y), false)
+			rig.set_view(rad_to_deg(rig.yaw), -36.0, float(Capture.arg("dist", "24")), Vector3(c.x, island.height_at(c.x, c.y), c.y), false)
 
 
 func _strike_tower() -> void:

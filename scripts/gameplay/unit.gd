@@ -1,12 +1,23 @@
 extends RefCounted
-## One soldier: simulation state plus its procedurally animated visual.
-## The mesh origin sits at the feet and the model faces +Z.
+## One soldier: simulation state plus its visual. The visual is either a rigged,
+## animated character (UnitRig) or a static mesh animated procedurally.
+## Models face +Z with their origin at the feet.
+
+const UnitRig := preload("res://scripts/gameplay/unit_rig.gd")
 
 enum State { IDLE, MOVE, FIGHT, DEAD }
 
+const ANIMS := {
+	"shield": {"attack": ["1H_Melee_Attack_Stab", "1H_Melee_Attack_Slice_Diagonal"], "idle": "Idle", "run": "Running_A"},
+	"sword": {"attack": ["2H_Melee_Attack_Chop", "2H_Melee_Attack_Slice"], "idle": "2H_Melee_Idle", "run": "Running_A"},
+	"archer": {"attack": ["1H_Ranged_Shoot"], "idle": "Idle", "aim": "1H_Ranged_Aiming", "run": "Running_B"},
+	"raider": {"attack": ["1H_Melee_Attack_Chop", "1H_Melee_Attack_Slice_Horizontal"], "idle": "Idle", "run": "Running_A"},
+	"berserker": {"attack": ["2H_Melee_Attack_Chop", "2H_Melee_Attack_Spin"], "idle": "2H_Melee_Idle", "run": "Running_B"},
+}
+
 var team := 0
 var squad                     # owning squad (untyped: avoids a cyclic preload)
-var kind := "spear"           # spear | archer | raider
+var kind := "shield"          # shield | sword | archer | raider | berserker
 var pos := Vector2.ZERO
 var y := 0.0
 var vel := Vector2.ZERO
@@ -30,22 +41,32 @@ var boarded := false          # riding a boat; position driven by the boat
 var hop_t := -1.0             # >= 0 while jumping from a boat into the shallows
 var hop_from := Vector3.ZERO
 var hop_to := Vector2.ZERO
+var upath := PackedVector2Array()   # personal detour when the goal isn't in line of walk
+var upath_i := 0
+var upath_goal := Vector2.INF
+var upath_t := 0.0
 var state := State.IDLE
 var dead_t := 0.0
 var walk_phase := 0.0
 var fall_dir := 1.0
 var node: Node3D
 var body: MeshInstance3D
+var rig                        # UnitRig, when the visual is an animated character
 
 
-func setup(parent: Node3D, mesh: Mesh, material: Material, p_pos: Vector2, p_y: float) -> void:
+## `visual` is a Mesh (procedural soldier) or a Dictionary {scene, keep, scale}.
+func setup(parent: Node3D, visual, material: Material, p_pos: Vector2, p_y: float) -> void:
 	pos = p_pos
 	y = p_y
 	node = Node3D.new()
-	body = MeshInstance3D.new()
-	body.mesh = mesh
-	body.material_override = material
-	node.add_child(body)
+	if visual is Dictionary:
+		rig = UnitRig.new(visual["scene"], PackedStringArray(visual["keep"]), visual["scale"])
+		node.add_child(rig.root)
+	else:
+		body = MeshInstance3D.new()
+		body.mesh = visual
+		body.material_override = material
+		node.add_child(body)
 	parent.add_child(node)
 	walk_phase = randf() * TAU
 	update_visual(0.0)
@@ -53,6 +74,32 @@ func setup(parent: Node3D, mesh: Mesh, material: Material, p_pos: Vector2, p_y: 
 
 func alive() -> bool:
 	return state != State.DEAD
+
+
+func _anims() -> Dictionary:
+	return ANIMS.get(kind, ANIMS["shield"])
+
+
+func on_swing() -> void:
+	if rig:
+		var list: Array = _anims()["attack"]
+		var sp := 1.6 if attack_range <= 0.0 else 1.5
+		rig.once(list[randi() % list.size()], sp, 0.62)
+
+
+func on_block() -> void:
+	if rig and swing_t < 0.0:
+		rig.once("Block_Hit", 1.5, 0.35)
+
+
+func on_hop() -> void:
+	if rig:
+		rig.once("Jump_Full_Short", 1.35, 0.55)
+
+
+func cheer() -> void:
+	if rig and alive():
+		rig.once("Cheer", randf_range(0.9, 1.1), 1e8)
 
 
 func take_hit(amount: float, from: Vector2) -> void:
@@ -67,10 +114,17 @@ func take_hit(amount: float, from: Vector2) -> void:
 		dead_t = 0.0
 		fall_dir = 1.0 if randf() < 0.5 else -1.0
 		facing = atan2(-away.x, -away.y)
+		if rig:
+			rig.die("Death_A" if randf() < 0.5 else "Death_B")
+	elif rig and swing_t < 0.0:
+		rig.once("Hit_A" if randf() < 0.5 else "Hit_B", 1.5, 0.3)
 
 
 func update_visual(dt: float) -> void:
 	flash = maxf(flash - dt * 5.0, 0.0)
+	if rig:
+		_update_rig(dt)
+		return
 	body.set_instance_shader_parameter("flash", flash)
 	if state == State.DEAD:
 		dead_t += dt
@@ -104,6 +158,34 @@ func update_visual(dt: float) -> void:
 	var idle_breath := sin(walk_phase * 0.35) * 0.012 * (1.0 - moving)
 	body.position = Vector3(0.0, idle_breath, thrust * 0.16 - wind * 0.06)
 	body.rotation = Vector3(moving * 0.12 + thrust * 0.28 - wind * 0.12, 0.0, sin(walk_phase) * 0.07 * moving)
+
+
+func _update_rig(dt: float) -> void:
+	rig.tick(dt)
+	rig.set_flash(flash)
+	if state == State.DEAD:
+		dead_t += dt
+		var sink := clampf((dead_t - 6.0) / 3.0, 0.0, 1.0) * 0.35
+		node.position = Vector3(pos.x, y - sink, pos.y)
+		node.rotation.y = facing
+		return
+	node.position = Vector3(pos.x, y, pos.y)
+	node.rotation.y = facing
+	if hop_t >= 0.0:
+		return
+	var a := _anims()
+	if boarded:
+		rig.loop(a["idle"])
+		return
+	var spd := vel.length()
+	if spd > 1.1:
+		rig.loop(a["run"], clampf(spd / 1.7, 0.75, 1.5))
+	elif spd > 0.22:
+		rig.loop("Walking_A", clampf(spd / 0.55, 0.8, 1.7))
+	elif target != null and a.has("aim"):
+		rig.loop(a["aim"])
+	else:
+		rig.loop(a["idle"])
 
 
 func free_visual() -> void:

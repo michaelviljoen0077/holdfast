@@ -22,6 +22,9 @@ var selected := false
 var color := Color.WHITE
 var goal_house                # raider objective (untyped house record)
 var in_combat := false
+var refit_t := 0.0             # time spent resting at a house door
+var refit_cooldown := 0.0
+var visual                     # spawn spec, reused when replenishing
 var banner: Node3D
 
 
