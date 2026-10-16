@@ -124,6 +124,14 @@ func _ready() -> void:
 func _debug_pick() -> void:
 	await get_tree().physics_frame
 	await get_tree().physics_frame
+	if Capture.arg("pick") == "tower" and tower:
+		var cam0: Camera3D = rig.camera
+		var tp: Vector3 = tower.global_position + Vector3(0, 1.0, 0)
+		var sp := cam0.unproject_position(tp)
+		var o := cam0.project_ray_origin(sp)
+		var hit0 := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(o, o + cam0.project_ray_normal(sp) * 500.0))
+		print("ROUNDTRIP tower=%s screen=%s viewport=%s hit=%s" % [tp, sp, get_viewport().get_visible_rect().size, hit0.get("position", "none")])
+		return
 	for spec in Capture.arg("pick").split(";"):
 		var xy := spec.split(",")
 		var px := Vector2(float(xy[0]), float(xy[1]))

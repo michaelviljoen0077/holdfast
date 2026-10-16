@@ -22,7 +22,8 @@ Fader="*res://scripts/core/fader.gd"
 
 window/size/viewport_width=1920
 window/size/viewport_height=1080
-window/stretch/mode="disabled"
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [input]
 
