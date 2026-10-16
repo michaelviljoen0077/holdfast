@@ -307,6 +307,16 @@ func _build_settlement(scatter) -> void:
 		mi.rotation.y = atan2(to_tower.x, to_tower.y) + rng.randf_range(-0.3, 0.3)
 		mi.position = Vector3(c.x, c.y - 0.06, c.z)
 		add_child(mi)
+		# Solid walls so tower rubble piles up against the house.
+		var aabb := mi.mesh.get_aabb()
+		var hb := StaticBody3D.new()
+		var hs := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(aabb.size.x - 0.3, aabb.size.y * 0.75, aabb.size.z - 0.45)
+		hs.shape = box
+		hs.position = aabb.get_center() - Vector3(0, aabb.size.y * 0.1, 0)
+		hb.add_child(hs)
+		mi.add_child(hb)
 		scatter.block(c.x, c.z, 1.5)
 		var door := Vector2(c.x, c.z) + Vector2(sin(mi.rotation.y), cos(mi.rotation.y)) * 0.95
 		paths.segment(Vector2(tp.x, tp.z), door)

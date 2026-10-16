@@ -85,6 +85,7 @@ func select(s) -> void:
 	selected = s
 	if s != null:
 		s.selected = true
+		Sfx.play_ui("click", -10.0)
 	topple_armed = false
 	ability_state.emit(false)
 	selection_changed.emit(s)
@@ -182,6 +183,7 @@ func _order_move(screen: Vector2) -> void:
 		_flash_dest(g, Color(1.0, 0.35, 0.3))
 		return
 	selected.set_path(path, false)
+	Sfx.play_ui("order", -9.0)
 	var end := path[path.size() - 1]
 	_flash_dest(Vector3(end.x, island.height_at(end.x, end.y), end.y), Color(0.95, 0.92, 0.75))
 	select(null)

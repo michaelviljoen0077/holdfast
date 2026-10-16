@@ -106,10 +106,12 @@ func setup(p_battle, p_director, p_commander) -> void:
 	battle.message.connect(func(t: String): show_banner(t, "", 2.5))
 	battle.house_lost.connect(func(_h): show_banner("A house has fallen", "", 2.5))
 	director.wave_started.connect(func(i: int, total: int, boats: int):
+		Sfx.play_ui("horn", -5.0)
 		show_banner("Wave %d of %d" % [i, total], "%d longboats sighted" % boats, 4.0))
 	director.victory.connect(func(): _end("The island holds"))
 	director.defeat.connect(func(): _end("The village is lost"))
 	commander.selection_changed.connect(func(_s): _refresh_cards())
+	show_banner("Hold the island", "Raiders are coming. Keep the village standing.", 5.0)
 	commander.ability_state.connect(func(armed: bool):
 		_ability.text = "  Click where it should fall  " if armed else "  Topple the Tower   [T]  ")
 

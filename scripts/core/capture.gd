@@ -43,5 +43,5 @@ func _process(_dt: float) -> void:
 		await RenderingServer.frame_post_draw
 		var img := get_viewport().get_texture().get_image()
 		var err := img.save_png(_path)
-		print("captured %s (err %d)" % [_path, err])
+		print("captured %s (err %d) fps %d" % [_path, err, Engine.get_frames_per_second()])
 		get_tree().quit()

@@ -373,11 +373,14 @@ func _resolve_attack(u: Unit) -> void:
 	if randf() < block_chance:
 		t.knock += (t.pos - u.pos).normalized() * 0.7
 		_spark(hit_pos)
+		Sfx.play("clash", hit_pos, -4.0)
 		return
 	t.take_hit(u.damage, u.pos)
 	_puff(hit_pos, 3, Color(0.85, 0.8, 0.7, 0.8))
+	Sfx.play("thud", hit_pos, -3.0)
 	if not t.alive():
 		_puff(Vector3(t.pos.x, t.y + 0.1, t.pos.y), 6, Color(0.75, 0.68, 0.55, 0.8))
+		Sfx.play("death", hit_pos, -6.0, 80)
 
 
 func _nearest_enemy(p: Vector2, team: int, radius: float):
@@ -440,6 +443,7 @@ func _update_hop(u: Unit, dt: float) -> void:
 		u.y = land_y
 		u.vel = Vector2.ZERO
 		_splash(Vector3(u.pos.x, 0.02, u.pos.y))
+		Sfx.play("splash", Vector3(u.pos.x, 0.0, u.pos.y), -8.0, 70)
 
 
 # Arrows ------------------------------------------------------------------
@@ -455,6 +459,7 @@ func _fire_arrow(u: Unit, t) -> void:
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
 	var from := Vector3(u.pos.x, u.y + 0.45, u.pos.y)
+	Sfx.play("bow", from, -8.0, 60)
 	var to := Vector3(aim.x, maxf(island.height_at(aim.x, aim.y), 0.0) + 0.25, aim.y)
 	arrows.append({"node": node, "from": from, "to": to, "t": 0.0, "dur": dur,
 		"arc": 1.0 + dist * 0.18, "target": t, "dmg": u.damage, "stuck_t": -1.0, "aim": aim})
@@ -486,12 +491,16 @@ func _update_arrows(dt: float) -> void:
 			if tgt != null and tgt.alive() and tgt.pos.distance_to(aim) < 0.42:
 				tgt.take_hit(a["dmg"], Vector2((a["from"] as Vector3).x, (a["from"] as Vector3).z))
 				_puff(Vector3(tgt.pos.x, tgt.y + 0.3, tgt.pos.y), 3, Color(0.85, 0.8, 0.7, 0.8))
+				Sfx.play("arrow_hit", p, -5.0)
+				if not tgt.alive():
+					Sfx.play("death", p, -6.0, 80)
 				node.queue_free()
 				arrows.remove_at(i)
 			else:
 				# Missed: stick into the ground at an angle.
 				a["stuck_t"] = 0.0
 				node.position.y -= 0.12
+				Sfx.play("arrow_hit", p, -14.0, 50)
 				if p.y < 0.0:
 					_splash(Vector3(p.x, 0.02, p.z))
 					node.queue_free()
@@ -624,6 +633,7 @@ func _make_fire(h: Dictionary) -> Node3D:
 	light.shadow_enabled = false
 	light.set_script(preload("res://scripts/gameplay/flicker.gd"))
 	root.add_child(light)
+	root.add_child(Sfx.fire_loop())
 	return root
 
 
@@ -636,6 +646,7 @@ func topple_tower(direction: Vector2) -> bool:
 	var base: Vector3 = tower.global_position
 	var hit := base + Vector3(-d.x * 1.2, 0.9, -d.y * 1.2)
 	tower.collapse(hit, 14.0)
+	Sfx.play("crumble", base + Vector3(0, 1.5, 0), 4.0, 0)
 	# Give the upper courses a shove so the whole tower leans out and falls.
 	for b in tower.blocks:
 		var h: float = b.position.y
