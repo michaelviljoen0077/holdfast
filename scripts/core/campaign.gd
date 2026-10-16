@@ -225,7 +225,7 @@ func waves_for(node: Dictionary) -> Array:
 	var d: int = node["difficulty"]
 	var plans := [
 		[["raiders"], ["raiders", "raiders"]],
-		[["raiders", "raiders"], ["raiders", "berserkers"], ["torchbearers", "berserkers", "raiders"]],
+		[["raiders", "raiders"], ["raiders", "berserkers"], ["torchbearers", "raiders"]],
 		[["raiders", "raiders"], ["torchbearers", "draugr", "berserkers"], ["raiders", "draugr", "bowmen", "berserkers"]],
 		[["raiders", "draugr", "berserkers"], ["draugr", "bowmen", "torchbearers"], ["chieftain", "raiders", "berserkers", "draugr"]],
 		[["draugr", "raiders", "berserkers"], ["draugr", "draugr", "bowmen", "torchbearers"], ["berserkers", "raiders", "bowmen"], ["chieftain", "draugr", "bowmen", "berserkers"]],
