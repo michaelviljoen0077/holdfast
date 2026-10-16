@@ -138,13 +138,18 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_RIGHT and _rmb_down != Vector3.INF:
 		_finish_order()
 		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT and builder and builder.drawing:
+		builder.release(_ground_at(event.position))
+		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
 		if builder and builder.active and mb.button_index == MOUSE_BUTTON_LEFT:
-			builder.click(_ground_at(mb.position))
+			builder.press(_ground_at(mb.position))
 			get_viewport().set_input_as_handled()
 		elif builder and builder.active and mb.button_index == MOUSE_BUTTON_RIGHT:
-			builder.set_active(false)
+			# Right-click a wall to take it down; anywhere else leaves build mode.
+			if not builder.dismantle_at(_collider_at(mb.position)):
+				builder.set_active(false)
 			get_viewport().set_input_as_handled()
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
 			if ability_armed and selected != null:
@@ -469,3 +474,10 @@ func call_militia() -> void:
 	var s = battle.call_militia(nav.cell_centre(c.x, c.y), 0.0)
 	if s != null:
 		select(s)
+
+
+func _collider_at(screen: Vector2) -> Object:
+	var cam: Camera3D = rig.camera
+	var from := cam.project_ray_origin(screen)
+	var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + cam.project_ray_normal(screen) * 600.0))
+	return hit.get("collider")

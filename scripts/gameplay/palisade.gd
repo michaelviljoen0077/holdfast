@@ -3,7 +3,7 @@ extends "res://scripts/gameplay/structure.gd"
 ## own frozen rigid body, so hacking the wall loosens individual stakes and
 ## breaking it sends the logs tumbling.
 
-const STAKE_GAP := 0.16
+const STAKE_GAP := 0.15
 const HEIGHT := 1.05
 
 static var _stake_mesh: ArrayMesh
@@ -12,6 +12,12 @@ static var _wood: StandardMaterial3D
 
 var stakes: Array[RigidBody3D] = []
 var stone := false              # ruined stone wall: tougher, fireproof
+var has_gate := false           # a door the warband can walk through
+const GATE_W := 0.7
+var _gate_cells: Array[Vector2i] = []
+var _doors: Array[Node3D] = []
+var _gate_c := Vector2.ZERO
+var _open := 0.0
 var rails: Array[MeshInstance3D] = []
 var _rest: Array[Transform3D] = []
 
@@ -24,17 +30,29 @@ func build(p_nav, p_island, p_a: Vector2, p_b: Vector2, p_team := 0) -> void:
 	max_hp = (30.0 + length * 14.0) * (3.0 if stone else (1.5 if Campaign.has_boon("stout_timber") else 1.0))
 	hp = max_hp
 	setup_footprint(p_nav, p_island, p_a, p_b, 0.34)
+	_gate_c = (p_a + p_b) * 0.5
+	if team == 0:
+		# Only the gate lets the warband through; the rest is solid to everyone.
+		var solid: Array[Vector2i] = []
+		for c in _cells:
+			if has_gate and nav.cell_centre(c.x, c.y).distance_to(_gate_c) < GATE_W * 0.55 + nav.CELL * 0.5:
+				_gate_cells.append(c)
+			else:
+				solid.append(c)
+		nav.block(solid, false)
 	_ensure_meshes()
 	var dir := (p_b - p_a) / maxf(length, 0.001)
 	var yaw := atan2(dir.x, dir.y)
 	var count := maxi(2, int(length / STAKE_GAP) + 1)
 	var shape := CylinderShape3D.new()
-	shape.radius = 0.085
+	shape.radius = 0.1
 	shape.height = HEIGHT
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(p_a.x * 1000.0 + p_b.y * 77.0)
 	for i in count:
 		var p := p_a.lerp(p_b, float(i) / (count - 1))
+		if has_gate and p.distance_to(_gate_c) < GATE_W * 0.5:
+			continue
 		var gy: float = island.height_at(p.x, p.y)
 		var body := RigidBody3D.new()
 		body.freeze = true
@@ -74,6 +92,8 @@ func build(p_nav, p_island, p_a: Vector2, p_b: Vector2, p_team := 0) -> void:
 		rail.transform = Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(1, 1, length)), Vector3(mid.x, gy2 + 0.3 + k * 0.38, mid.y))
 		add_child(rail)
 		rails.append(rail)
+	if has_gate:
+		_build_gate(p_a, p_b)
 
 
 static func _ensure_meshes() -> void:
@@ -83,7 +103,7 @@ static func _ensure_meshes() -> void:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_smooth_group(-1)
 	var sides := 6
-	var r := 0.085
+	var r := 0.1
 	for s in sides:
 		var a0 := TAU * s / sides
 		var a1 := TAU * (s + 1) / sides
@@ -139,6 +159,8 @@ func _release(s: RigidBody3D, from: Vector2, power: float) -> void:
 
 
 func _break_apart(from: Vector2) -> void:
+	if has_gate:
+		_break_gate()
 	for s in stakes:
 		if s.freeze:
 			_release(s, from, randf_range(1.5, 3.0))
@@ -170,3 +192,69 @@ static func _stone_mat() -> StandardMaterial3D:
 		_stone.albedo_color = Color(0.55, 0.53, 0.49)
 		_stone.roughness = 0.95
 	return _stone
+
+
+func _build_gate(p_a: Vector2, p_b: Vector2) -> void:
+	var dir := (p_b - p_a).normalized()
+	var yaw := atan2(dir.x, dir.y)
+	var g: float = island.height_at(_gate_c.x, _gate_c.y)
+	# Two heavy posts and a lintel.
+	for s in [-1.0, 1.0]:
+		var post := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.09
+		cm.bottom_radius = 0.1
+		cm.height = 1.35
+		cm.radial_segments = 6
+		post.mesh = cm
+		post.material_override = _wood
+		var pp: Vector2 = _gate_c + dir * s * GATE_W * 0.5
+		post.position = Vector3(pp.x, g + 0.55, pp.y)
+		add_child(post)
+	var lintel := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.12, 0.1, GATE_W + 0.25)
+	lintel.mesh = bm
+	lintel.material_override = _wood
+	lintel.transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(_gate_c.x, g + 1.18, _gate_c.y))
+	add_child(lintel)
+	# Two door leaves on hinges at the posts.
+	for s in [-1.0, 1.0]:
+		var hinge := Node3D.new()
+		var hp: Vector2 = _gate_c + dir * s * GATE_W * 0.5
+		hinge.position = Vector3(hp.x, g, hp.y)
+		hinge.rotation.y = yaw
+		add_child(hinge)
+		var leaf := MeshInstance3D.new()
+		var lm := BoxMesh.new()
+		lm.size = Vector3(0.06, 0.9, GATE_W * 0.5)
+		leaf.mesh = lm
+		leaf.material_override = _wood
+		leaf.position = Vector3(0, 0.5, -s * GATE_W * 0.25)
+		hinge.add_child(leaf)
+		hinge.set_meta("side", s)
+		_doors.append(hinge)
+
+
+func _process(dt: float) -> void:
+	super._process(dt)
+	if not has_gate or dead or battle == null:
+		return
+	var want := 0.0
+	for u in battle.units:
+		if u.team == team and u.alive() and (u.pos as Vector2).distance_to(_gate_c) < 1.1:
+			want = 1.0
+			break
+	_open = move_toward(_open, want, dt * 3.0)
+	var dir := (b - a).normalized()
+	var yaw := atan2(dir.x, dir.y)
+	for h in _doors:
+		h.rotation.y = yaw + float(h.get_meta("side")) * _open * 1.45
+
+
+func _break_gate() -> void:
+	for h in _doors:
+		var t := create_tween()
+		t.tween_property(h, "rotation:z", 1.4, 0.4)
+	if not _gate_cells.is_empty():
+		nav.unblock(_gate_cells)

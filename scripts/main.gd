@@ -163,6 +163,26 @@ func _dump_nav() -> void:
 	print("components: ", sizes)
 
 
+## Test hook: draws a palisade stroke around the village like a player would.
+func _build_test(builder) -> void:
+	await get_tree().process_frame
+	builder.set_active(true)
+	var c := Vector2(tower.position.x, tower.position.z)
+	var a0 := float(Capture.arg("buildangle", "0.6"))
+	var pts := []
+	for k in 30:
+		var a := a0 + k * 0.06
+		pts.append(c + Vector2(cos(a), sin(a)) * 6.0)
+	builder.press(Vector3(pts[0].x, 0, pts[0].y))
+	for p in pts:
+		builder.hover(Vector3(p.x, 0, p.y))
+		await get_tree().process_frame
+	print("BUILDTEST cost=%d reason=%s" % [builder.preview_cost, builder.preview_reason])
+	if Capture.has("release"):
+		builder.release(Vector3(pts[pts.size() - 1].x, 0, pts[pts.size() - 1].y))
+		print("BUILDTEST built walls=%d timber_left=%d" % [battle.structures.size(), builder.timber])
+
+
 func _strike_after_frames(n: int) -> void:
 	for i in n:
 		await get_tree().process_frame
@@ -707,6 +727,9 @@ func _build_battle() -> void:
 	if island_trait == "ruins" and mission == "defend":
 		_place_ruins()
 	commander.builder = builder
+	builder.director = director
+	if Capture.has("buildtest"):
+		_build_test.call_deferred(builder)
 	if Capture.has("formtest"):
 		var forms := ["line", "wedge", "ring", "block"]
 		var k := 0

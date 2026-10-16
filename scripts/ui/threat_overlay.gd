@@ -86,6 +86,7 @@ func _draw() -> void:
 	if rig == null:
 		return
 	var cam: Camera3D = rig.camera
+	_draw_routes(cam)
 	var vp := get_viewport_rect().size
 	var margin := 46.0
 	var centre := vp * 0.5
@@ -123,3 +124,62 @@ func _draw() -> void:
 		var f := UI.bold()
 		var tw := f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
 		draw_string(f, at - dir * 34.0 + Vector2(-tw * 0.5, 6), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, UI.INK)
+
+
+var _routes := {}       # boat id -> PackedVector2Array (world xz)
+
+
+## Where each incoming crew will march: beach to the nearest house.
+func _route_for(b: Dictionary) -> PackedVector2Array:
+	var key: int = b["node"].get_instance_id()
+	if _routes.has(key):
+		return _routes[key]
+	var wade: Vector2 = b["wade"]
+	var best := Vector2.INF
+	for h in battle.intact_houses():
+		if best == Vector2.INF or wade.distance_to(h["door"]) < wade.distance_to(best):
+			best = h["door"]
+	var path := PackedVector2Array()
+	if best != Vector2.INF:
+		var nav = battle.nav
+		var was: bool = nav.raider_mode
+		nav.raider_mode = true
+		path = nav.find_path(wade, best)
+		nav.raider_mode = was
+	_routes[key] = path
+	return path
+
+
+func _draw_routes(cam: Camera3D) -> void:
+	if director.mode != "defend":
+		return
+	var live := {}
+	for b in director.boats:
+		if b["state"] != "sail" and b["state"] != "unload":
+			continue
+		if night and b["t"] < 0.55:
+			continue
+		var key: int = b["node"].get_instance_id()
+		live[key] = true
+		var path := _route_for(b)
+		if path.size() < 2:
+			continue
+		var col := _boat_color(b)
+		var dash := 0.0
+		var phase := fmod(_t * 1.4, 1.0)
+		for i in range(1, path.size()):
+			var a := path[i - 1]
+			var c := path[i]
+			var seg := a.distance_to(c)
+			var d := 0.0
+			while d < seg:
+				var p := a.lerp(c, d / seg)
+				var w := Vector3(p.x, maxf(island.height_at(p.x, p.y), 0.0) + 0.15, p.y)
+				if not cam.is_position_behind(w):
+					var k := fmod(dash * 0.5 - phase + 10.0, 1.0)
+					draw_circle(cam.unproject_position(w), 3.2, Color(col.r, col.g, col.b, 0.35 + 0.45 * k))
+				d += 0.55
+				dash += 1.0
+	for key in _routes.keys():
+		if not live.has(key):
+			_routes.erase(key)

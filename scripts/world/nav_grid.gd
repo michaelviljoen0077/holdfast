@@ -16,7 +16,10 @@ var heights := PackedFloat32Array()
 var walkable := PackedByteArray()
 var component := PackedInt32Array()
 var blocked := PackedByteArray()      # cells covered by standing structures
-var astar := AStar2D.new()
+var astar := AStar2D.new()        # the player's view: their own walls have gates
+var astar_r := AStar2D.new()      # the raiders' view: player walls block them
+## When true, queries answer for raiders (player palisades are solid).
+var raider_mode := false
 var island
 
 const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
@@ -62,7 +65,13 @@ func in_bounds(c: Vector2i) -> bool:
 
 
 func is_walkable(c: Vector2i) -> bool:
-	return in_bounds(c) and walkable[idx(c)] == 1 and blocked[idx(c)] == 0
+	if not in_bounds(c):
+		return false
+	var k := idx(c)
+	if walkable[k] != 1:
+		return false
+	var b := blocked[k]
+	return b == 0 or (b == 2 and not raider_mode)
 
 
 ## Cells within `half_width` of segment a-b (a structure's footprint).
@@ -82,13 +91,16 @@ func cells_along(a: Vector2, b: Vector2, half_width: float) -> Array[Vector2i]:
 	return out
 
 
-func block(cells: Array[Vector2i]) -> void:
+## `raiders_only`: a player palisade, which the warband passes through by its gates.
+func block(cells: Array[Vector2i], raiders_only := false) -> void:
 	for c in cells:
 		if not in_bounds(c):
 			continue
 		var k := idx(c)
-		blocked[k] = 1
-		if astar.has_point(k):
+		blocked[k] = 2 if (raiders_only and blocked[k] != 1) else 1
+		if astar_r.has_point(k):
+			astar_r.set_point_disabled(k, true)
+		if not raiders_only and astar.has_point(k):
 			astar.set_point_disabled(k, true)
 
 
@@ -100,6 +112,8 @@ func unblock(cells: Array[Vector2i]) -> void:
 		blocked[k] = 0
 		if astar.has_point(k):
 			astar.set_point_disabled(k, false)
+		if astar_r.has_point(k):
+			astar_r.set_point_disabled(k, false)
 
 
 func linked(a: Vector2i, b: Vector2i) -> bool:
@@ -149,14 +163,30 @@ func component_sizes() -> Dictionary:
 
 
 func build_astar() -> void:
-	astar.clear()
-	astar.reserve_space(n * n)
+	var keep := raider_mode
+	raider_mode = false
+	_build_one(astar)
+	_build_one(astar_r)
+	raider_mode = keep
+	for k in n * n:
+		if blocked[k] == 1 or blocked[k] == 2:
+			if astar_r.has_point(k):
+				astar_r.set_point_disabled(k, true)
+		if blocked[k] == 1 and astar.has_point(k):
+			astar.set_point_disabled(k, true)
+
+
+func _build_one(graph: AStar2D) -> void:
+	var saved := blocked.duplicate()
+	blocked.fill(0)
+	graph.clear()
+	graph.reserve_space(n * n)
 	for k in n * n:
 		if walkable[k] == 1:
 			var c := Vector2i(k % n, k / n)
 			# Wading is slow; keep units on dry land when there is a choice.
 			var w := 3.0 if heights[k] < -0.05 else 1.0
-			astar.add_point(k, cell_centre(c.x, c.y), w)
+			graph.add_point(k, cell_centre(c.x, c.y), w)
 	for k in n * n:
 		if walkable[k] == 0:
 			continue
@@ -164,7 +194,8 @@ func build_astar() -> void:
 		for d in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(1, -1)]:
 			var nb: Vector2i = c + d
 			if linked(c, nb):
-				astar.connect_points(k, idx(nb))
+				graph.connect_points(k, idx(nb))
+	blocked = saved
 
 
 ## Nearest walkable cell to a world point (searching outward in rings).
@@ -189,7 +220,8 @@ func find_path(from: Vector2, to: Vector2) -> PackedVector2Array:
 	var b := nearest_walkable(to)
 	if a.x < 0 or b.x < 0:
 		return PackedVector2Array()
-	var raw := astar.get_point_path(idx(a), idx(b), true)
+	var graph := astar_r if raider_mode else astar
+	var raw := graph.get_point_path(idx(a), idx(b), true)
 	if raw.is_empty():
 		return raw
 	raw[0] = from

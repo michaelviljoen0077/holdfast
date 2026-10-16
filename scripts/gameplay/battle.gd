@@ -316,12 +316,14 @@ signal boss_spawned(unit)
 
 func _physics_process(dt: float) -> void:
 	_rebuild_grid()
+	nav.raider_mode = false
 	_update_slams(dt)
 	_chieftains = units.filter(func(x): return x.kind == "chieftain" and x.alive() and not x.boarded)
 	for s in squads:
 		_update_squad(s, dt)
 	for u in units:
 		_update_unit(u, dt)
+	nav.raider_mode = false
 	_update_arrows(dt)
 	_update_houses(dt)
 	if crush_t > 0.0:
@@ -383,6 +385,7 @@ func _centroid(s: Squad) -> Vector2:
 func _update_squad(s: Squad, dt: float) -> void:
 	if s.is_dead():
 		return
+	nav.raider_mode = s.team == RAIDERS
 	s.ability_cd = maxf(s.ability_cd - dt, 0.0)
 	s.ability_t = maxf(s.ability_t - dt, 0.0)
 	var before: int = s.order
@@ -417,6 +420,7 @@ func _update_unit(u: Unit, dt: float) -> void:
 	if u.hop_t >= 0.0:
 		_update_hop(u, dt)
 		return
+	nav.raider_mode = u.team == RAIDERS
 	var s: Squad = u.squad
 	u.attack_t -= dt
 	if u.kind == "priest":

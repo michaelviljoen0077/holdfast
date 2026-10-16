@@ -35,7 +35,8 @@ func setup_footprint(p_nav, p_island, p_a: Vector2, p_b: Vector2, p_thickness: f
 	thickness = p_thickness
 	if blocks_nav:
 		_cells = nav.cells_along(a, b, thickness * 0.5)
-		nav.block(_cells)
+		# The player's own walls have gates for the player's soldiers.
+		nav.block(_cells, team == 0)
 
 
 func centre() -> Vector2:

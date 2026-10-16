@@ -42,8 +42,13 @@ longboats are only spotted when nearly ashore.
 twice as hard, a little faster) and Ring (shields face every way, slow).
 Fighting downhill hits harder.
 
-**Fortify (B)**: spend timber on palisades. Raiders must hack through or go
-around; berserkers and chieftains smash them fast.
+**Fortify (B)**: hold the left mouse button and drag to draw a palisade along
+the ground; release to build. The ghost shows real stakes, the timber cost and
+why any part won't fit. Each wall you draw gets a gate in the middle that your
+soldiers walk through; raiders must hack through or go around. Right-click a
+wall in build mode to tear it down (full refund before the first wave, half
+after). While longboats sail in, red dotted lines show the route each crew
+will march, so you can see where a wall matters.
 
 **Militia (M)**: once per battle the village takes up arms — more houses
 standing, more militia.
@@ -64,7 +69,7 @@ out.
 | 1 – 5 | Select squad by number |
 | F (or Space) | Squad ability; Charge and Volley then need a ground click |
 | G | Cycle the selected squad's formation |
-| B | Build palisades (click start, click end; chains; right click to stop) |
+| B | Build mode: drag to draw palisades, right-click a wall to remove it, Esc to leave |
 | M | Call the militia |
 | T, then left click | Topple the tower in the clicked direction (crushes friend and foe) |
 | WASD / middle-drag | Pan |

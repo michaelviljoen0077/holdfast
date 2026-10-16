@@ -326,6 +326,12 @@ func _update_boat(b: Dictionary, dt: float) -> void:
 # Raider AI -------------------------------------------------------------------
 
 func _think() -> void:
+	nav.raider_mode = true
+	_think_raiders()
+	nav.raider_mode = false
+
+
+func _think_raiders() -> void:
 	for b in boats:
 		var squad = b["squad"]
 		if b["state"] != "beached" and b["state"] != "leave":
@@ -514,6 +520,12 @@ func burned() -> int:
 
 ## Garrison AI: hold the camp until something stirs, then hunt the intruders.
 func _assault_think() -> void:
+	nav.raider_mode = true
+	_assault_think_inner()
+	nav.raider_mode = false
+
+
+func _assault_think_inner() -> void:
 	if not _alarm:
 		for o in objectives:
 			if o.hp < o.max_hp:

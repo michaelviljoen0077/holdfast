@@ -22,6 +22,7 @@ var _hint: Label
 var _boss_box: VBoxContainer
 var _build_btn: Button
 var _militia_btn: Button
+var _build_tip: Label
 var _boss_bar: ProgressBar
 
 const INK := Color(0.96, 0.93, 0.86)
@@ -112,6 +113,9 @@ func setup(p_battle, p_director, p_commander) -> void:
 	_militia_btn.focus_mode = Control.FOCUS_NONE
 	_militia_btn.pressed.connect(func(): commander.call_militia())
 	root.add_child(_militia_btn)
+	_build_tip = _label(17, INK)
+	_build_tip.visible = false
+	root.add_child(_build_tip)
 
 	_boss_box = VBoxContainer.new()
 	_boss_box.set_anchors_preset(Control.PRESET_CENTER_TOP)
@@ -418,6 +422,21 @@ Captives freed   %d" % [director.burned(), director.objectives.size(), director.
 	_ability.disabled = battle.tower == null or battle.tower.collapsed
 	_militia_btn.disabled = battle.militia_called or battle.militia_size() <= 0
 	_militia_btn.text = "  Militia called  " if battle.militia_called else "  Call the militia [M]  ·  %d  " % battle.militia_size()
+	if commander.builder:
+		var bld0 = commander.builder
+		_build_tip.visible = bld0.active
+		if bld0.active:
+			var mp := get_viewport().get_mouse_position()
+			_build_tip.position = mp + Vector2(22, 18)
+			if bld0.preview_reason != "":
+				_build_tip.text = bld0.preview_reason
+				_build_tip.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
+			elif bld0.drawing:
+				_build_tip.text = "%d timber  ·  release to build" % int(bld0.preview_cost)
+				_build_tip.add_theme_color_override("font_color", Color(0.7, 1.0, 0.7))
+			else:
+				_build_tip.text = "Drag to draw a wall  ·  right-click a wall to remove it  ·  %d timber" % int(bld0.timber)
+				_build_tip.add_theme_color_override("font_color", INK)
 	if commander.builder:
 		var bld = commander.builder
 		_build_btn.text = ("  Placing palisade  ·  %d timber left  " if bld.active else "  Build palisade [B]  ·  %d timber  ") % int(bld.timber)
