@@ -35,7 +35,7 @@ func _ready() -> void:
 	_button(_main_box, "Abandon campaign" if Campaign.active else "Return to title", func():
 		_unpause()
 		Campaign.active = false
-		get_tree().change_scene_to_file("res://scenes/title.tscn"))
+		Fader.go("res://scenes/title.tscn"))
 
 	_settings_box = _column()
 	_settings_box.add_child(_title("Settings"))

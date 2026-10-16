@@ -15,6 +15,7 @@ Capture="*res://scripts/core/capture.gd"
 Sfx="*res://scripts/core/audio.gd"
 Campaign="*res://scripts/core/campaign.gd"
 Settings="*res://scripts/core/settings.gd"
+Fader="*res://scripts/core/fader.gd"
 
 [display]
 

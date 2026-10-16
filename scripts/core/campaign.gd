@@ -43,6 +43,7 @@ func new_campaign(p_seed := -1) -> void:
 	current = {}
 	last_result = {}
 	changed.emit()
+	save_game()
 
 
 func _add_squad(kind: String) -> Dictionary:
@@ -137,6 +138,7 @@ func sail_to(i: int) -> void:
 	current = chart[column][node_i]
 	current["visited"] = true
 	changed.emit()
+	save_game()
 
 
 ## Wave plan for an island of the given difficulty.
@@ -175,7 +177,13 @@ func finish_island(won: bool, saved: int, total: int, survivors: Dictionary) -> 
 			fallen.append(r["name"])
 	last_result = {"won": won, "saved": saved, "total": total, "earned": earned, "fallen": fallen,
 		"finale": current.get("finale", false)}
+	# Back at camp: the island is done, so a reload resumes on the chart.
+	current = {}
 	changed.emit()
+	if is_over():
+		delete_save()
+	else:
+		save_game()
 
 
 func is_over() -> bool:
@@ -193,6 +201,7 @@ func unlock(r: Dictionary) -> void:
 		gold -= COST_UNLOCK
 		r["ability"] = true
 		changed.emit()
+		save_game()
 
 
 func train_cost(r: Dictionary) -> int:
@@ -209,6 +218,7 @@ func train(r: Dictionary) -> void:
 		gold -= train_cost(r)
 		r["level"] += 1
 		changed.emit()
+		save_game()
 
 
 func can_recruit() -> bool:
@@ -220,3 +230,50 @@ func recruit(kind: String) -> void:
 		gold -= COST_RECRUIT
 		_add_squad(kind)
 		changed.emit()
+		save_game()
+
+
+# Persistence ---------------------------------------------------------------
+
+const SAVE_PATH := "user://campaign.save"
+
+
+func save_game() -> void:
+	if not active or Capture.has("capture"):
+		return
+	var data := {"gold": gold, "roster": roster, "chart": chart, "column": column, "node_i": node_i,
+		"current": current, "last_result": last_result, "next_id": _next_id, "rng_state": rng.state}
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f:
+		f.store_var(data)
+
+
+func has_save() -> bool:
+	return FileAccess.file_exists(SAVE_PATH)
+
+
+func load_game() -> bool:
+	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if f == null:
+		return false
+	var data = f.get_var()
+	if typeof(data) != TYPE_DICTIONARY:
+		return false
+	gold = data["gold"]
+	roster = data["roster"]
+	chart = data["chart"]
+	column = data["column"]
+	node_i = data["node_i"]
+	last_result = data["last_result"]
+	_next_id = data["next_id"]
+	rng.state = data["rng_state"]
+	# `current` must alias the chart entry so marking it visited sticks.
+	current = chart[column][node_i] if column >= 0 else {}
+	active = true
+	changed.emit()
+	return true
+
+
+func delete_save() -> void:
+	if has_save():
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))

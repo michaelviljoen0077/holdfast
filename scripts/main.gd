@@ -507,6 +507,10 @@ func _build_battle() -> void:
 	add_child(hud)
 	hud.setup(battle, director, commander)
 	hud.card_pressed.connect(commander.select)
+	var threats := preload("res://scripts/ui/threat_overlay.gd").new()
+	hud.get_child(0).add_child(threats)
+	hud.get_child(0).move_child(threats, 0)
+	threats.setup(director, battle, island, rig)
 	var island_name: String = Campaign.current.get("name", "") if Campaign.active else ""
 	if island_name == "":
 		island_name = "Hold the island"
@@ -595,7 +599,7 @@ func _continue_campaign() -> void:
 	var won: bool = director.raiders_alive() == 0 and survivors.values().any(func(v): return v > 0)
 	Campaign.finish_island(won, battle.intact_houses().size(), battle.houses.size(), survivors)
 	Engine.time_scale = 1.0
-	get_tree().change_scene_to_file("res://scenes/camp.tscn")
+	Fader.go("res://scenes/camp.tscn")
 
 
 func _process(dt: float) -> void:

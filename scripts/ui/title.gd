@@ -42,6 +42,11 @@ func _ready() -> void:
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 40)
 	col.add_child(gap)
+	if Campaign.has_save():
+		_button(col, "Continue Campaign", func():
+			if Campaign.load_game():
+				# Mid-island saves drop you straight back into that battle.
+				_leave("res://scenes/main.tscn" if not Campaign.current.is_empty() else "res://scenes/camp.tscn"))
 	_button(col, "New Campaign", func():
 		Campaign.new_campaign()
 		_leave("res://scenes/camp.tscn"))
@@ -77,6 +82,10 @@ func _leave(scene: String) -> void:
 	var Main := load("res://scripts/main.gd")
 	Main.attract = false
 	Engine.time_scale = 1.0
+	Fader.go(scene)
+
+
+func _exit_tree() -> void:
+	# The backdrop lives under the root; take it down with the title.
 	if is_instance_valid(_backdrop):
 		_backdrop.queue_free()
-	get_tree().change_scene_to_file(scene)

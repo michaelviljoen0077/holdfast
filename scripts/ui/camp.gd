@@ -379,7 +379,7 @@ func _set_sail() -> void:
 		return
 	Campaign.sail_to(_picked)
 	Sfx.play_ui("horn", -10.0)
-	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	Fader.go("res://scenes/main.tscn")
 
 
 func _show_end() -> void:
@@ -406,5 +406,5 @@ func _show_end() -> void:
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	b.pressed.connect(func():
 		Campaign.active = false
-		get_tree().change_scene_to_file("res://scenes/title.tscn"))
+		Fader.go("res://scenes/title.tscn"))
 	box.add_child(b)
