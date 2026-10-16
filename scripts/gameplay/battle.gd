@@ -10,6 +10,7 @@ signal squad_changed(squad)
 signal house_lost(house)
 signal message(text: String)
 signal squad_refitted(squad)
+signal ability_used(squad)
 
 const REFIT_TIME := 3.0
 const REFIT_COOLDOWN := 25.0
@@ -82,6 +83,13 @@ func spawn_squad(team: int, kind: String, squad_name: String, visual, at: Vector
 		units.append(u)
 	s.speed = s.units[0].speed * 0.95
 	s.visual = visual
+	match kind:
+		"shield":
+			s.ability = "brace"
+		"sword":
+			s.ability = "charge"
+		"archer":
+			s.ability = "volley"
 	s.assign_slots(nav, true)
 	for u in s.units:
 		u.pos = u.slot
@@ -244,14 +252,22 @@ func _centroid(s: Squad) -> Vector2:
 func _update_squad(s: Squad, dt: float) -> void:
 	if s.is_dead():
 		return
+	s.ability_cd = maxf(s.ability_cd - dt, 0.0)
+	s.ability_t = maxf(s.ability_t - dt, 0.0)
 	var before: int = s.order
 	var engaged := false
 	if s.order != Squad.Order.MOVE:
 		engaged = _nearest_enemy(s.anchor, s.team, s.engage_radius) != null
 	s.in_combat = engaged
 	# Attack-moving squads stop to fight; plain moves push through.
-	if not (s.order == Squad.Order.ATTACK_MOVE and engaged):
+	if s.braced():
+		pass
+	elif not (s.order == Squad.Order.ATTACK_MOVE and engaged):
+		var base := s.speed
+		if s.charging():
+			s.speed = base * 1.9
 		s.advance(dt, nav)
+		s.speed = base
 	s.assign_slots(nav, before != s.order)
 	if s.team == PLAYER:
 		_update_refit(s, dt)
@@ -290,6 +306,12 @@ func _update_unit(u: Unit, dt: float) -> void:
 	# Desired position.
 	var goal := u.slot
 	var fighting := false
+	if s.braced():
+		u.target = _nearest_enemy(u.pos, u.team, u.reach * 1.1)
+		goal = u.pos
+	elif s.charging():
+		u.target = null
+		_trample(u)
 	if u.target != null:
 		var to: Vector2 = u.target.pos - u.pos
 		var dist := to.length()
@@ -329,6 +351,8 @@ func _update_unit(u: Unit, dt: float) -> void:
 		var spd := u.speed * clampf(d / 0.6, 0.15, 1.0)
 		if u.swing_t >= 0.0:
 			spd *= 0.2
+		if s.charging():
+			spd *= 1.9
 		want = to_goal / d * spd
 	want += _separation(u) * 2.2
 	u.vel = u.vel.lerp(want, clampf(dt * 9.0, 0.0, 1.0))
@@ -400,12 +424,18 @@ func _resolve_attack(u: Unit) -> void:
 	match t.kind:
 		"shield":
 			block_chance = 0.6 if frontal else 0.15
+			if t.squad.braced():
+				block_chance = 1.0 if frontal else 0.55
 		"raider":
 			block_chance = 0.22 if frontal else 0.05
 		"sword":
 			block_chance = 0.08
 	if randf() < block_chance:
-		t.knock += (t.pos - u.pos).normalized() * 0.7
+		if not t.squad.braced():
+			t.knock += (t.pos - u.pos).normalized() * 0.7
+		else:
+			# A braced wall throws attackers back.
+			u.knock += (u.pos - t.pos).normalized() * 1.2
 		t.on_block()
 		_spark(hit_pos)
 		Sfx.play("clash", hit_pos, -4.0)
@@ -511,6 +541,11 @@ func _update_arrows(dt: float) -> void:
 				arrows.remove_at(i)
 			continue
 		a["t"] += dt / a["dur"]
+		if a["t"] < 0.0:
+			continue
+		if not node.visible:
+			node.visible = true
+			Sfx.play("bow", a["from"], -10.0, 30)
 		var t: float = minf(a["t"], 1.0)
 		var p: Vector3 = (a["from"] as Vector3).lerp(a["to"], t)
 		p.y += sin(t * PI) * a["arc"]
@@ -523,7 +558,9 @@ func _update_arrows(dt: float) -> void:
 		if a["t"] >= 1.0:
 			var tgt = a["target"]
 			var aim: Vector2 = a["aim"]
-			if tgt != null and tgt.alive() and tgt.pos.distance_to(aim) < 0.42:
+			if tgt == null:
+				tgt = _nearest_enemy(aim, a.get("team", PLAYER), 0.5)
+			if tgt != null and tgt.alive() and tgt.pos.distance_to(aim) < 0.5:
 				tgt.take_hit(a["dmg"], Vector2((a["from"] as Vector3).x, (a["from"] as Vector3).z))
 				_puff(Vector3(tgt.pos.x, tgt.y + 0.3, tgt.pos.y), 3, Color(0.85, 0.8, 0.7, 0.8))
 				Sfx.play("arrow_hit", p, -5.0)
@@ -850,3 +887,72 @@ func _detour(u: Unit, goal: Vector2, dt: float) -> Vector2:
 	while u.upath_i < u.upath.size() - 1 and u.pos.distance_to(u.upath[u.upath_i]) < 0.3:
 		u.upath_i += 1
 	return u.upath[mini(u.upath_i, u.upath.size() - 1)]
+
+
+# Abilities -----------------------------------------------------------------
+
+## Activates a squad ability. `at` is the ground target for targeted abilities.
+func use_ability(s: Squad, at := Vector2.INF) -> bool:
+	if not s.ability_ready():
+		return false
+	var info := s.ability_info()
+	match s.ability:
+		"brace":
+			s.set_path(PackedVector2Array())
+			s.order = Squad.Order.HOLD
+			for u in s.units:
+				if u.alive():
+					_puff(Vector3(u.pos.x, u.y + 0.05, u.pos.y), 1, Color(0.85, 0.8, 0.7, 0.6))
+			Sfx.play("clash", Vector3(s.anchor.x, island.height_at(s.anchor.x, s.anchor.y) + 0.3, s.anchor.y), -2.0, 0)
+		"charge":
+			var path: PackedVector2Array = nav.find_path(s.anchor, at)
+			if path.is_empty():
+				return false
+			s.set_path(path, false)
+			for u in s.units:
+				u.charge_hits = {}
+			Sfx.play_ui("horn", -14.0)
+		"volley":
+			var shooters := 0
+			for u in s.units:
+				if not u.alive() or u.pos.distance_to(at) > u.attack_range * 1.4:
+					continue
+				shooters += 1
+				var spot := at + Vector2.from_angle(randf() * TAU) * sqrt(randf()) * 1.4
+				_fire_volley_bolt(u, spot, randf() * 0.35)
+				u.facing = atan2(at.x - u.pos.x, at.y - u.pos.y)
+				u.on_swing()
+			if shooters == 0:
+				return false
+	s.ability_t = info["duration"]
+	s.ability_cd = info["cooldown"]
+	ability_used.emit(s)
+	return true
+
+
+func _fire_volley_bolt(u: Unit, spot: Vector2, delay: float) -> void:
+	var dist := u.pos.distance_to(spot)
+	var node := MeshInstance3D.new()
+	node.mesh = _arrow_mesh
+	node.material_override = _arrow_mat
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.visible = false
+	add_child(node)
+	var from := Vector3(u.pos.x, u.y + 0.35, u.pos.y)
+	var to := Vector3(spot.x, maxf(island.height_at(spot.x, spot.y), 0.0) + 0.2, spot.y)
+	# Negative t delays the shot so the volley ripples instead of firing as one.
+	arrows.append({"node": node, "from": from, "to": to, "t": -delay / (0.5 + dist * 0.04), "dur": 0.5 + dist * 0.04,
+		"arc": 1.2 + dist * 0.12, "target": null, "dmg": u.damage, "stuck_t": -1.0, "aim": spot, "team": u.team})
+
+
+func _trample(u: Unit) -> void:
+	for o in _query(u.pos, 0.6):
+		if o.team == u.team or not o.alive() or o.boarded or u.charge_hits.has(o):
+			continue
+		if o.pos.distance_to(u.pos) > 0.55:
+			continue
+		u.charge_hits[o] = true
+		o.take_hit(1.0, u.pos)
+		o.knock += (o.pos - u.pos).normalized() * 3.0
+		_puff(Vector3(o.pos.x, o.y + 0.2, o.pos.y), 3, Color(0.85, 0.8, 0.7, 0.8))
+		Sfx.play("thud", Vector3(o.pos.x, o.y, o.pos.y), -2.0)

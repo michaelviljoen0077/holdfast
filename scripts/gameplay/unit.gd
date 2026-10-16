@@ -41,6 +41,7 @@ var boarded := false          # riding a boat; position driven by the boat
 var hop_t := -1.0             # >= 0 while jumping from a boat into the shallows
 var hop_from := Vector3.ZERO
 var hop_to := Vector2.ZERO
+var charge_hits := {}          # enemies already bowled over during this charge
 var upath := PackedVector2Array()   # personal detour when the goal isn't in line of walk
 var upath_i := 0
 var upath_goal := Vector2.INF
@@ -176,6 +177,9 @@ func _update_rig(dt: float) -> void:
 	var a := _anims()
 	if boarded:
 		rig.loop(a["idle"])
+		return
+	if squad != null and squad.braced():
+		rig.loop("Blocking")
 		return
 	var spd := vel.length()
 	if spd > 1.1:

@@ -14,6 +14,7 @@ var rig
 var selected = null
 var hovered = null
 var topple_armed := false
+var ability_armed := false      # selected squad's targeted ability awaits a click
 
 var _ring: Decal
 var _hover_ring: Decal
@@ -80,6 +81,7 @@ func _ring_texture(inner: float, outer: float, col: Color) -> ImageTexture:
 
 
 func select(s) -> void:
+	ability_armed = false
 	if selected != null:
 		selected.selected = false
 	selected = s
@@ -89,6 +91,21 @@ func select(s) -> void:
 	topple_armed = false
 	ability_state.emit(false)
 	selection_changed.emit(s)
+
+
+## F: brace fires immediately; charge and volley wait for a ground click.
+func trigger_ability(squad = null) -> void:
+	var s = squad if squad != null else selected
+	if s == null or not s.ability_ready():
+		return
+	if s.ability_info()["targeted"]:
+		if selected != s:
+			select(s)
+		ability_armed = true
+		ability_state.emit(false)
+	else:
+		battle.use_ability(s)
+		select(null)
 
 
 func arm_topple() -> void:
@@ -107,7 +124,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
-			if topple_armed:
+			if ability_armed and selected != null:
+				var g0 := _ground_at(mb.position)
+				if g0 != Vector3.INF:
+					var s0 = selected
+					if battle.use_ability(s0, Vector2(g0.x, g0.z)):
+						_flash_dest(g0, Color(1.0, 0.8, 0.4))
+				ability_armed = false
+				select(null)
+			elif topple_armed:
 				var g := _ground_at(mb.position)
 				if g != Vector3.INF:
 					var tp: Vector3 = battle.tower.global_position
@@ -130,6 +155,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				select(mine[i])
 		elif k == KEY_T:
 			arm_topple()
+		elif k == KEY_F or k == KEY_SPACE:
+			trigger_ability()
 		elif k == KEY_ESCAPE:
 			select(null)
 			topple_armed = false
@@ -236,6 +263,14 @@ func _process(dt: float) -> void:
 		_preview_t = 0.08
 		var g := _ground_at(_mouse)
 		_preview = nav.find_path(selected.anchor, Vector2(g.x, g.z)) if g != Vector3.INF else PackedVector2Array()
+		if ability_armed and selected.ability == "volley":
+			_preview = PackedVector2Array()
+			if g != Vector3.INF:
+				_dest.position = g
+				_dest.modulate = Color(1.0, 0.75, 0.35, 0.9)
+				_dest.scale = Vector3(2.4, 1.0, 2.4)
+				_dest.visible = true
+				_dest_t = 0.15
 	elif selected == null:
 		_preview = PackedVector2Array()
 	_draw_path()
@@ -261,7 +296,8 @@ func _draw_path() -> void:
 			var p := a + dirv * d
 			var h := maxf(island.height_at(p.x, p.y), 0.0) + 0.06
 			var fade := clampf(total / 1.5, 0.0, 1.0)
-			_dot(Vector3(p.x, h, p.y), 0.055, Color(1.0, 0.97, 0.85, 0.85 * fade))
+			var dot_col := Color(1.0, 0.72, 0.3, 0.9 * fade) if ability_armed else Color(1.0, 0.97, 0.85, 0.85 * fade)
+			_dot(Vector3(p.x, h, p.y), 0.055, dot_col)
 			d += spacing
 		carry = seg - (d - spacing)
 		total += seg

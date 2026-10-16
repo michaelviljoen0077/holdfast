@@ -53,7 +53,9 @@ func time_to_next_wave() -> float:
 func _physics_process(dt: float) -> void:
 	if finished:
 		return
-	wave_clock += dt
+	# The next wave holds back while the shore is still crowded, so waves
+	# pressure the player without stacking into an unwinnable pile.
+	wave_clock += dt * (1.0 if raiders_alive() < 6 else 0.35)
 	if wave_i < waves.size() and wave_clock >= waves[wave_i]["delay"]:
 		_launch_wave(waves[wave_i]["boats"])
 		wave_i += 1

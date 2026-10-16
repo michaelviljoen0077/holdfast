@@ -25,6 +25,32 @@ var in_combat := false
 var refit_t := 0.0             # time spent resting at a house door
 var refit_cooldown := 0.0
 var visual                     # spawn spec, reused when replenishing
+var ability := ""              # brace | charge | volley
+var ability_cd := 0.0          # seconds until usable again
+var ability_t := 0.0           # seconds the effect remains active
+var ability_unlocked := true
+
+const ABILITIES := {
+	"brace": {"name": "Brace", "cooldown": 22.0, "duration": 6.0, "targeted": false},
+	"charge": {"name": "Charge", "cooldown": 20.0, "duration": 3.5, "targeted": true},
+	"volley": {"name": "Volley", "cooldown": 16.0, "duration": 0.0, "targeted": true},
+}
+
+
+func ability_info() -> Dictionary:
+	return ABILITIES.get(ability, {})
+
+
+func ability_ready() -> bool:
+	return ability != "" and ability_unlocked and ability_cd <= 0.0 and not is_dead()
+
+
+func braced() -> bool:
+	return ability == "brace" and ability_t > 0.0
+
+
+func charging() -> bool:
+	return ability == "charge" and ability_t > 0.0
 var banner: Node3D
 
 

@@ -82,7 +82,7 @@ func setup(p_battle, p_director, p_commander) -> void:
 	root.add_child(_ability)
 
 	_hint = _label(15, INK.darkened(0.25))
-	_hint.text = "LMB select squad  •  RMB move  •  Rest at a house to refit  •  T topple tower  •  WASD / Q E / wheel camera"
+	_hint.text = "LMB select  •  RMB move  •  F squad ability  •  Rest at a house to refit  •  T topple tower  •  WASD / Q E / wheel"
 	_hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hint.position = Vector2(24, -36)
 	root.add_child(_hint)
@@ -167,6 +167,13 @@ func _box(bg: Color, border: Color, bw: int) -> StyleBoxFlat:
 	return sb
 
 
+func _flat(c: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = c
+	sb.set_corner_radius_all(2)
+	return sb
+
+
 func _panel() -> PanelContainer:
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", _box(PANEL, Color(0.5, 0.42, 0.3, 0.6), 1))
@@ -188,6 +195,25 @@ func _refresh_cards() -> void:
 		for i in pips.size():
 			(pips[i] as ColorRect).color = s.color.lightened(0.15) if i < alive else Color(0.25, 0.22, 0.2, 0.8)
 		(card["panel"] as PanelContainer).modulate.a = 1.0 if alive > 0 else 0.45
+		var info: Dictionary = s.ability_info()
+		var abil: Label = card["abil"]
+		var bar: ProgressBar = card["bar"]
+		if info.is_empty() or not s.ability_unlocked:
+			abil.text = ""
+			bar.visible = false
+		else:
+			bar.visible = true
+			if s.ability_t > 0.0 and info["duration"] > 0.0:
+				abil.text = "%s  active" % info["name"]
+				bar.value = s.ability_t / info["duration"]
+			elif s.ability_cd > 0.0:
+				abil.text = "%s  %ds" % [info["name"], int(ceil(s.ability_cd))]
+				bar.value = 1.0 - s.ability_cd / info["cooldown"]
+			else:
+				abil.text = "%s  ready  [F]" % info["name"]
+				bar.value = 1.0
+			if commander.ability_armed and sel:
+				abil.text = "Click to target %s" % info["name"]
 
 
 func _make_card(s, index: int) -> Dictionary:
@@ -203,6 +229,15 @@ func _make_card(s, index: int) -> Dictionary:
 	var title := _label(18, INK)
 	title.text = "%d   %s" % [index, s.name]
 	v.add_child(title)
+	var abil := _label(14, Color(1.0, 0.82, 0.5))
+	v.add_child(abil)
+	var bar := ProgressBar.new()
+	bar.show_percentage = false
+	bar.custom_minimum_size = Vector2(0, 5)
+	bar.max_value = 1.0
+	bar.add_theme_stylebox_override("background", _flat(Color(0.2, 0.18, 0.16, 0.9)))
+	bar.add_theme_stylebox_override("fill", _flat(Color(1.0, 0.75, 0.35)))
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -214,8 +249,9 @@ func _make_card(s, index: int) -> Dictionary:
 		pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(pip)
 		pips.append(pip)
+	v.add_child(bar)
 	_card_row.add_child(panel)
-	return {"panel": panel, "pips": pips}
+	return {"panel": panel, "pips": pips, "abil": abil, "bar": bar}
 
 
 func _process(dt: float) -> void:
@@ -236,6 +272,6 @@ func _process(dt: float) -> void:
 	_status.text = lines
 	_ability.disabled = battle.tower == null or battle.tower.collapsed
 	if Engine.time_scale < 0.9:
-		_hint.text = "Tactical pause  •  RMB to order the selected squad  •  Esc to cancel"
+		_hint.text = "Tactical pause  •  RMB move  •  F ability  •  Esc cancel"
 	else:
-		_hint.text = "LMB select squad  •  RMB move  •  Rest at a house to refit  •  T topple tower  •  WASD / Q E / wheel camera"
+		_hint.text = "LMB select  •  RMB move  •  F squad ability  •  Rest at a house to refit  •  T topple tower  •  WASD / Q E / wheel"

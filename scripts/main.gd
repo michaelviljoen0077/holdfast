@@ -427,6 +427,16 @@ func _autoplay(dt: float) -> void:
 		if s.team != battle.PLAYER or s.is_dead() or s.order != 0:
 			continue
 		var c: Vector2 = battle._centroid(s)
+		if s.ability_ready():
+			var foe := Vector2.INF
+			for u in battle.units:
+				if u.alive() and u.team == battle.RAIDERS and not u.boarded and u.hop_t < 0.0 and c.distance_to(u.pos) < c.distance_to(foe):
+					foe = u.pos
+			if foe != Vector2.INF:
+				var fd := c.distance_to(foe)
+				if (s.ability == "brace" and fd < 2.0) or (s.ability == "charge" and fd > 2.5 and fd < 9.0) or (s.ability == "volley" and fd < 10.0):
+					battle.use_ability(s, foe)
+					continue
 		# Badly hurt and not fighting: go refit at the nearest house.
 		if s.alive_count() * 2 < s.units.size() and not s.in_combat and s.refit_cooldown <= 0.0:
 			var home = null
