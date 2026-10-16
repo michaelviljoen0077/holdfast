@@ -62,6 +62,8 @@ func spawn_squad(team: int, kind: String, squad_name: String, visual, at: Vector
 	s.anchor = at
 	s.facing = facing
 	s.color = Color(0.25, 0.42, 0.85) if team == PLAYER else Color(0.8, 0.22, 0.16)
+	if kind.begins_with("draugr"):
+		s.color = Color(0.18, 0.58, 0.52)
 	if kind == "archer":
 		s.spacing = 0.55
 		s.engage_radius = 11.0
@@ -132,6 +134,33 @@ func _apply_stats(u: Unit) -> void:
 			u.reach = 0.72
 			u.damage = 2.0
 			u.cooldown = 1.35
+		"chieftain":
+			u.max_hp = 16.0
+			u.speed = 2.2
+			u.reach = 0.95
+			u.damage = 3.0
+			u.cooldown = 1.4
+		"draugr":
+			u.max_hp = 2.0
+			u.speed = 1.9
+			u.reach = 0.6
+			u.damage = 1.0
+			u.cooldown = 1.35
+			u.can_rise = true
+		"draugr_archer":
+			u.max_hp = 2.0
+			u.speed = 2.0
+			u.reach = 0.5
+			u.damage = 1.0
+			u.cooldown = 3.0
+			u.attack_range = 8.0
+			u.can_rise = true
+		"champion":
+			u.max_hp = 10.0
+			u.speed = 1.9
+			u.reach = 0.85
+			u.damage = 2.0
+			u.cooldown = 1.3
 	# Veteran squads: tougher and harder-hitting per level.
 	var lvl: int = u.squad.level if u.squad != null else 1
 	u.max_hp *= 1.0 + 0.3 * (lvl - 1)
@@ -185,8 +214,13 @@ func _banner_texture(col: Color, kind: String) -> ImageTexture:
 						glyph = absf(lx) < 3.0 and absf(ly) < 13.0
 					"sword":
 						glyph = (absf(lx) < 3.0 and absf(ly) < 13.0) or (absf(ly + 3.0) < 2.6 and absf(lx) < 9.0)
-					"archer":
+					"archer", "draugr_archer":
 						glyph = absf(absf(lx) - (ly + 10.0) * 0.6) < 2.6 and ly > -10.0 and ly < 8.0
+					"draugr":
+						# Skull: a pale dome with two dark eyes.
+						var dome := Vector2(lx, ly * 1.2 + 2.0).length() < 12.0
+						var eyes := Vector2(absf(lx) - 5.0, ly + 1.0).length() < 3.4
+						glyph = dome and not eyes
 					_:
 						glyph = (absf(lx - ly) < 3.2 or absf(lx + ly) < 3.2) and absf(lx) < 10.0
 				img.set_pixel(x, y, Color(1, 0.97, 0.9) if glyph else fill)
@@ -210,8 +244,12 @@ func intact_houses() -> Array:
 # --------------------------------------------------------------------------
 # Simulation
 
+var _chieftains: Array = []
+
+
 func _physics_process(dt: float) -> void:
 	_rebuild_grid()
+	_chieftains = units.filter(func(x): return x.kind == "chieftain" and x.alive() and not x.boarded)
 	for s in squads:
 		_update_squad(s, dt)
 	for u in units:
@@ -239,7 +277,7 @@ func _process(dt: float) -> void:
 	# Remove long-dead bodies.
 	for i in range(units.size() - 1, -1, -1):
 		var u: Unit = units[i]
-		if u.state == Unit.State.DEAD and u.dead_t > 9.0:
+		if u.state == Unit.State.DEAD and u.dead_t > 9.0 and (not u.can_rise or u.risen):
 			u.free_visual()
 			units.remove_at(i)
 
@@ -280,6 +318,10 @@ func _update_squad(s: Squad, dt: float) -> void:
 
 func _update_unit(u: Unit, dt: float) -> void:
 	if u.state == Unit.State.DEAD:
+		if u.can_rise and not u.risen and u.dead_t > 4.5:
+			u.rise()
+			_puff(Vector3(u.pos.x, u.y + 0.1, u.pos.y), 6, Color(0.55, 0.75, 0.7, 0.8))
+			Sfx.play("crumble", Vector3(u.pos.x, u.y, u.pos.y), -16.0, 200)
 		return
 	if u.boarded:
 		return
@@ -288,6 +330,12 @@ func _update_unit(u: Unit, dt: float) -> void:
 		return
 	var s: Squad = u.squad
 	u.attack_t -= dt
+	# A chieftain's war cry quickens every raider near him.
+	if u.team == RAIDERS and u.kind != "chieftain":
+		for c in _chieftains:
+			if c.pos.distance_squared_to(u.pos) < 16.0:
+				u.attack_t -= dt * 0.6
+				break
 
 	# Target selection.
 	if u.target != null and (not u.target.alive() or u.target.boarded):
@@ -433,6 +481,10 @@ func _resolve_attack(u: Unit) -> void:
 				block_chance = 1.0 if frontal else 0.55
 		"raider":
 			block_chance = 0.22 if frontal else 0.05
+		"draugr":
+			block_chance = 0.15 if frontal else 0.0
+		"champion":
+			block_chance = 0.45 if frontal else 0.1
 		"sword":
 			block_chance = 0.08
 	if randf() < block_chance:
@@ -565,6 +617,13 @@ func _update_arrows(dt: float) -> void:
 			var aim: Vector2 = a["aim"]
 			if tgt == null:
 				tgt = _nearest_enemy(aim, a.get("team", PLAYER), 0.5)
+			var from3: Vector3 = a["from"]
+			if tgt != null and tgt.alive() and tgt.pos.distance_to(aim) < 0.5 and _blocks_missile(tgt, Vector2(from3.x, from3.z)):
+				_spark(Vector3(tgt.pos.x, tgt.y + 0.35, tgt.pos.y))
+				Sfx.play("clash", p, -12.0, 60)
+				node.queue_free()
+				arrows.remove_at(i)
+				continue
 			if tgt != null and tgt.alive() and tgt.pos.distance_to(aim) < 0.5:
 				tgt.take_hit(a["dmg"], Vector2((a["from"] as Vector3).x, (a["from"] as Vector3).z))
 				_puff(Vector3(tgt.pos.x, tgt.y + 0.3, tgt.pos.y), 3, Color(0.85, 0.8, 0.7, 0.8))
@@ -961,3 +1020,18 @@ func _trample(u: Unit) -> void:
 		o.knock += (o.pos - u.pos).normalized() * 3.0
 		_puff(Vector3(o.pos.x, o.y + 0.2, o.pos.y), 3, Color(0.85, 0.8, 0.7, 0.8))
 		Sfx.play("thud", Vector3(o.pos.x, o.y, o.pos.y), -2.0)
+
+
+## Shields stop missiles coming from the front.
+func _blocks_missile(t, from: Vector2) -> bool:
+	var frontal := Vector2(sin(t.facing), cos(t.facing)).dot((from - t.pos).normalized()) > 0.2
+	match t.kind:
+		"shield":
+			if t.squad.braced():
+				return frontal or randf() < 0.5
+			return frontal and randf() < 0.7
+		"champion":
+			return frontal and randf() < 0.6
+		"raider", "draugr":
+			return frontal and randf() < 0.25
+	return false

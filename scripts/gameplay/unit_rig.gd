@@ -3,7 +3,7 @@ extends RefCounted
 ## Strips accessories the loadout doesn't use and drives the AnimationPlayer
 ## from simple high-level requests (locomotion, attack, hit, death...).
 
-const LOOPING := ["Idle", "Walking_A", "Walking_B", "Walking_C", "Running_A", "Running_B",
+const LOOPING := ["Idle", "Idle_B", "Idle_Combat", "Walking_A", "Walking_B", "Walking_C", "Walking_D_Skeletons", "Running_A", "Running_B", "Running_C",
 	"2H_Melee_Idle", "Unarmed_Idle", "Blocking", "Cheer", "1H_Ranged_Aiming", "2H_Ranged_Aiming",
 	"Sit_Floor_Idle", "Jump_Idle"]
 const FLASH_SHADER := preload("res://shaders/hit_flash.gdshader")
@@ -19,9 +19,18 @@ var _lock_t := 0.0          # one-shot animation playing; locomotion waits
 var _flashing := false
 
 
-func _init(scene: PackedScene, keep: PackedStringArray, scale: float) -> void:
+## `attach` maps a bone attachment name (handslot_r, handslot_l) to a weapon scene path.
+func _init(scene: PackedScene, keep: PackedStringArray, scale: float, attach := {}) -> void:
 	root = scene.instantiate()
 	root.scale = Vector3.ONE * scale
+	for slot in attach:
+		var bone := root.find_child(slot, true, false)
+		if bone != null:
+			# Holder keeps attached weapons from being mistaken for unused hand props.
+			var holder := Node3D.new()
+			holder.name = "Attached"
+			holder.add_child((load(attach[slot]) as PackedScene).instantiate())
+			bone.add_child(holder)
 	for mi in root.find_children("*", "MeshInstance3D", true, false):
 		var parent := mi.get_parent()
 		var in_hand := parent is BoneAttachment3D and String(parent.name).begins_with("handslot")

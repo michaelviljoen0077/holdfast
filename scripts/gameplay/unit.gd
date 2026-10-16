@@ -13,6 +13,10 @@ const ANIMS := {
 	"archer": {"attack": ["1H_Ranged_Shoot"], "idle": "Idle", "aim": "1H_Ranged_Aiming", "run": "Running_B"},
 	"raider": {"attack": ["1H_Melee_Attack_Chop", "1H_Melee_Attack_Slice_Horizontal"], "idle": "Idle", "run": "Running_A"},
 	"berserker": {"attack": ["2H_Melee_Attack_Chop", "2H_Melee_Attack_Spin"], "idle": "2H_Melee_Idle", "run": "Running_B"},
+	"chieftain": {"attack": ["2H_Melee_Attack_Spin", "2H_Melee_Attack_Chop", "2H_Melee_Attack_Slice"], "idle": "2H_Melee_Idle", "run": "Running_A"},
+	"draugr": {"attack": ["1H_Melee_Attack_Chop", "1H_Melee_Attack_Slice_Diagonal"], "idle": "Idle_Combat", "run": "Running_C", "walk": "Walking_D_Skeletons", "death": "Death_C_Skeletons"},
+	"draugr_archer": {"attack": ["1H_Ranged_Shoot"], "idle": "Idle", "aim": "1H_Ranged_Aiming", "run": "Running_A", "walk": "Walking_D_Skeletons", "death": "Death_C_Skeletons"},
+	"champion": {"attack": ["1H_Melee_Attack_Chop", "1H_Melee_Attack_Jump_Chop"], "idle": "Idle_Combat", "run": "Running_A", "walk": "Walking_D_Skeletons"},
 }
 
 var team := 0
@@ -53,6 +57,8 @@ var fall_dir := 1.0
 var node: Node3D
 var body: MeshInstance3D
 var rig                        # UnitRig, when the visual is an animated character
+var can_rise := false          # draugr reassemble once after being cut down
+var risen := false
 
 
 ## `visual` is a Mesh (procedural soldier) or a Dictionary {scene, keep, scale}.
@@ -61,7 +67,7 @@ func setup(parent: Node3D, visual, material: Material, p_pos: Vector2, p_y: floa
 	y = p_y
 	node = Node3D.new()
 	if visual is Dictionary:
-		rig = UnitRig.new(visual["scene"], PackedStringArray(visual["keep"]), visual["scale"])
+		rig = UnitRig.new(visual["scene"], PackedStringArray(visual["keep"]), visual["scale"], visual.get("attach", {}))
 		node.add_child(rig.root)
 	else:
 		body = MeshInstance3D.new()
@@ -116,7 +122,8 @@ func take_hit(amount: float, from: Vector2) -> void:
 		fall_dir = 1.0 if randf() < 0.5 else -1.0
 		facing = atan2(-away.x, -away.y)
 		if rig:
-			rig.die("Death_A" if randf() < 0.5 else "Death_B")
+			var a := _anims()
+			rig.die(a["death"] if a.has("death") else ("Death_A" if randf() < 0.5 else "Death_B"))
 	elif rig and swing_t < 0.0:
 		rig.once("Hit_A" if randf() < 0.5 else "Hit_B", 1.5, 0.3)
 
@@ -185,11 +192,23 @@ func _update_rig(dt: float) -> void:
 	if spd > 1.1:
 		rig.loop(a["run"], clampf(spd / 1.7, 0.75, 1.5))
 	elif spd > 0.22:
-		rig.loop("Walking_A", clampf(spd / 0.55, 0.8, 1.7))
+		rig.loop(a.get("walk", "Walking_A"), clampf(spd / 0.55, 0.8, 1.7))
 	elif target != null and a.has("aim"):
 		rig.loop(a["aim"])
 	else:
 		rig.loop(a["idle"])
+
+
+## Draugr pull themselves back together, once.
+func rise() -> void:
+	risen = true
+	state = State.IDLE
+	hp = max_hp * 0.5
+	dead_t = 0.0
+	target = null
+	swing_t = -1.0
+	if rig:
+		rig.once("Death_C_Skeletons_Resurrect", 1.0)
 
 
 func free_visual() -> void:

@@ -276,9 +276,17 @@ func _update_detail() -> void:
 	var node: Dictionary = Campaign.chart[_hover.x][_hover.y]
 	var waves := Campaign.waves_for(node)
 	var boats := 0
+	var drowned := false
+	var chief := false
 	for w in waves:
-		boats += w["boats"]
-	var what := "The Jarl's own fleet." if node["finale"] else "%d waves, about %d longboats." % [waves.size(), boats]
+		boats += (w["boats"] as Array).size()
+		drowned = drowned or w["boats"].has("draugr") or w["boats"].has("bowmen")
+		chief = chief or w["boats"].has("chieftain")
+	var what := "The Jarl's own fleet." if node["finale"] else "%d waves, %d longboats." % [waves.size(), boats]
+	if drowned:
+		what += "  The Drowned walk here."
+	if chief:
+		what += "  A chieftain leads them."
 	_detail.text = "%s  —  %s" % [node["name"], what]
 
 

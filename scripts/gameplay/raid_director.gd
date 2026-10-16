@@ -13,15 +13,24 @@ var battle
 var island
 var nav
 var boat_mesh: Mesh
-var raider_visual
-var berserker_visual
+var visuals := {}           # kind -> character spec
+var _announced := {}
+
+## Boat crews. Every `alt_every`-th seat takes the `alt` kind instead.
+const CREWS := {
+	"raiders": {"kind": "raider", "name": "Raiders", "alt": "berserker", "alt_every": 4},
+	"berserkers": {"kind": "berserker", "name": "Berserkers", "alt": "raider", "alt_every": 3},
+	"draugr": {"kind": "draugr", "name": "The Drowned", "alt": "champion", "alt_every": 8},
+	"bowmen": {"kind": "draugr_archer", "name": "Drowned bowmen", "alt": "", "alt_every": 0},
+	"chieftain": {"kind": "raider", "name": "Chieftain's guard", "alt": "chieftain", "alt_every": 8},
+}
 var boat_material: Material
 var rng := RandomNumberGenerator.new()
 
 var waves := [
-	{"delay": 7.0, "boats": 2},
-	{"delay": 40.0, "boats": 3},
-	{"delay": 45.0, "boats": 3},
+	{"delay": 7.0, "boats": ["raiders", "raiders"]},
+	{"delay": 40.0, "boats": ["raiders", "draugr", "bowmen"]},
+	{"delay": 45.0, "boats": ["chieftain", "raiders", "draugr"]},
 ]
 var wave_i := 0
 var wave_clock := 0.0
@@ -33,13 +42,12 @@ const SEATS := [Vector3(-0.28, 0.08, -1.3), Vector3(0.28, 0.08, -1.3), Vector3(-
 	Vector3(-0.28, 0.08, -0.06), Vector3(0.28, 0.08, -0.06), Vector3(-0.28, 0.08, 0.56), Vector3(0.28, 0.08, 0.56)]
 
 
-func setup(p_battle, p_island, p_nav, p_boat_mesh: Mesh, p_raider_visual, p_berserker_visual, p_mat: Material, p_seed: int) -> void:
+func setup(p_battle, p_island, p_nav, p_boat_mesh: Mesh, p_visuals: Dictionary, p_mat: Material, p_seed: int) -> void:
 	battle = p_battle
 	island = p_island
 	nav = p_nav
 	boat_mesh = p_boat_mesh
-	raider_visual = p_raider_visual
-	berserker_visual = p_berserker_visual
+	visuals = p_visuals
 	boat_material = p_mat
 	rng.seed = p_seed
 
@@ -60,7 +68,7 @@ func _physics_process(dt: float) -> void:
 		_launch_wave(waves[wave_i]["boats"])
 		wave_i += 1
 		wave_clock = 0.0
-		wave_started.emit(wave_i, waves.size(), waves[wave_i - 1]["boats"])
+		wave_started.emit(wave_i, waves.size(), (waves[wave_i - 1]["boats"] as Array).size())
 		if Capture.has("capture"):
 			var alive := 0
 			for sq in battle.squads:
@@ -104,7 +112,8 @@ func _find_landing(angle: float) -> Dictionary:
 	return {"boat_to": boat_to, "wade": wade, "dir": dir}
 
 
-func _launch_wave(count: int) -> void:
+func _launch_wave(crews: Array) -> void:
+	var count := crews.size()
 	var base := rng.randf() * TAU
 	var used: Array[Vector2] = []
 	var launched := 0
@@ -123,11 +132,11 @@ func _launch_wave(count: int) -> void:
 		if clash:
 			continue
 		used.append(site["wade"])
-		_spawn_boat(site, launched)
+		_spawn_boat(site, launched, crews[launched])
 		launched += 1
 
 
-func _spawn_boat(site: Dictionary, index: int) -> void:
+func _spawn_boat(site: Dictionary, index: int, crew_type := "raiders") -> void:
 	var dir: Vector2 = site["dir"]
 	var to: Vector2 = site["boat_to"]
 	var from := to + dir * (26.0 + index * 4.0)
@@ -141,12 +150,19 @@ func _spawn_boat(site: Dictionary, index: int) -> void:
 	node.position = Vector3(from.x, 0.02, from.y)
 	node.rotation.y = atan2(-dir.x, -dir.y)
 
-	# Later waves bring more berserkers.
-	var every := 4 if wave_i < 2 else 3
-	var squad = battle.spawn_squad(battle.RAIDERS, "raider", "Raiders", raider_visual, site["wade"], SEATS.size(), atan2(-dir.x, -dir.y),
-		{"kind": "berserker", "visual": berserker_visual, "every": every})
-	squad.engage_radius = 4.5
-	squad.leash = 6.0
+	var crew: Dictionary = CREWS.get(crew_type, CREWS["raiders"])
+	var alt := {}
+	if crew["alt"] != "":
+		alt = {"kind": crew["alt"], "visual": visuals[crew["alt"]], "every": crew["alt_every"]}
+	var squad = battle.spawn_squad(battle.RAIDERS, crew["kind"], crew["name"], visuals[crew["kind"]], site["wade"], SEATS.size(), atan2(-dir.x, -dir.y), alt)
+	if crew["kind"] == "draugr_archer":
+		# Bowmen stop at range and loose bolts rather than charging in.
+		squad.engage_radius = 9.0
+		squad.leash = 1.5
+	else:
+		squad.engage_radius = 4.5
+		squad.leash = 6.0
+	_announce(crew_type)
 	for i in squad.units.size():
 		var u = squad.units[i]
 		u.boarded = true
@@ -357,3 +373,17 @@ func _check_end() -> void:
 			finished = true
 			print("RESULT victory houses=%d player_alive=%d wave=%d" % [battle.intact_houses().size(), player_alive, wave_i])
 			victory.emit()
+
+
+func _announce(crew_type: String) -> void:
+	if _announced.has(crew_type):
+		return
+	_announced[crew_type] = true
+	match crew_type:
+		"draugr", "bowmen":
+			if not _announced.has("_drowned"):
+				_announced["_drowned"] = true
+				battle.message.emit("The Drowned rise from the sea")
+		"chieftain":
+			battle.message.emit("A raider chieftain comes ashore")
+			Sfx.play_ui("horn", -2.0)

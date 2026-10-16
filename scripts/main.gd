@@ -453,9 +453,19 @@ func _build_battle() -> void:
 	director = Director.new()
 	director.name = "RaidDirector"
 	add_child(director)
-	var raider_vis := {"scene": barbarian, "keep": ["1H_Axe", "Barbarian_Round_Shield"], "scale": CHAR_SCALE}
-	var berserk_vis := {"scene": barbarian, "keep": ["2H_Axe"], "scale": CHAR_SCALE * 1.05}
-	director.setup(battle, island, nav, Props.longboat(island_seed), raider_vis, berserk_vis, prop_mat, island_seed * 5 + 1)
+	var sk := "res://assets/kaykit/skeletons/"
+	var enemy_vis := {
+		"raider": {"scene": barbarian, "keep": ["1H_Axe", "Barbarian_Round_Shield"], "scale": CHAR_SCALE},
+		"berserker": {"scene": barbarian, "keep": ["2H_Axe"], "scale": CHAR_SCALE * 1.05},
+		"chieftain": {"scene": barbarian, "keep": ["2H_Axe"], "scale": CHAR_SCALE * 1.45},
+		"draugr": {"scene": load(sk + "Skeleton_Minion.glb"), "keep": [], "scale": CHAR_SCALE,
+			"attach": {"handslot_r": sk + "Skeleton_Blade.gltf", "handslot_l": sk + "Skeleton_Shield_Small_A.gltf"}},
+		"draugr_archer": {"scene": load(sk + "Skeleton_Rogue.glb"), "keep": [], "scale": CHAR_SCALE,
+			"attach": {"handslot_r": sk + "Skeleton_Crossbow.gltf"}},
+		"champion": {"scene": load(sk + "Skeleton_Warrior.glb"), "keep": [], "scale": CHAR_SCALE * 1.25,
+			"attach": {"handslot_r": sk + "Skeleton_Axe.gltf", "handslot_l": sk + "Skeleton_Shield_Large_A.gltf"}},
+	}
+	director.setup(battle, island, nav, Props.longboat(island_seed), enemy_vis, prop_mat, island_seed * 5 + 1)
 	director.victory.connect(func(): battle.cheer(Battle.PLAYER))
 	director.defeat.connect(func(): battle.cheer(Battle.RAIDERS))
 	if Campaign.active and not Campaign.current.is_empty():

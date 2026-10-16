@@ -142,14 +142,19 @@ func sail_to(i: int) -> void:
 ## Wave plan for an island of the given difficulty.
 func waves_for(node: Dictionary) -> Array:
 	var d: int = node["difficulty"]
-	if node.get("finale", false):
-		return [{"delay": 8.0, "boats": 2}, {"delay": 35.0, "boats": 3}, {"delay": 40.0, "boats": 4}, {"delay": 45.0, "boats": 4}]
-	var waves := [{"delay": 8.0, "boats": 1 + int(d >= 2)}]
-	waves.append({"delay": 38.0, "boats": 2 + int(d >= 3)})
-	if d >= 1:
-		waves.append({"delay": 42.0, "boats": 2 + int(d >= 4)})
-	if d >= 4:
-		waves.append({"delay": 45.0, "boats": 3})
+	var plans := [
+		[["raiders"], ["raiders", "raiders"]],
+		[["raiders"], ["raiders", "raiders"], ["raiders", "berserkers"]],
+		[["raiders", "raiders"], ["raiders", "draugr"], ["raiders", "draugr", "bowmen"]],
+		[["raiders", "draugr"], ["draugr", "bowmen", "raiders"], ["chieftain", "raiders", "berserkers"]],
+		[["draugr", "raiders"], ["draugr", "draugr", "bowmen"], ["berserkers", "raiders", "bowmen"], ["chieftain", "draugr", "bowmen"]],
+		[["raiders", "berserkers"], ["draugr", "draugr", "bowmen"], ["chieftain", "raiders", "draugr"], ["chieftain", "berserkers", "draugr", "bowmen"]],
+	]
+	var plan: Array = plans[5] if node.get("finale", false) else plans[mini(d, 4)]
+	var delays := [8.0, 38.0, 42.0, 45.0]
+	var waves := []
+	for i in plan.size():
+		waves.append({"delay": delays[i], "boats": plan[i]})
 	return waves
 
 
