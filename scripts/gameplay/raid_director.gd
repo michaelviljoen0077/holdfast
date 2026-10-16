@@ -370,13 +370,21 @@ func _think() -> void:
 				squad.set_path(p, true)
 
 
+## Raiders weigh distance against how well a house is guarded, so they drift
+## toward the weak side of the village instead of always the nearest door.
 func _nearest_house(p: Vector2):
 	var best = null
-	var best_d := INF
+	var best_score := INF
 	for h in battle.intact_houses():
-		var d: float = p.distance_to(h["pos"])
-		if d < best_d:
-			best_d = d
+		var guards := 0
+		for u in battle.units:
+			if u.team == battle.PLAYER and u.alive() and (u.pos as Vector2).distance_to(h["pos"]) < 5.0:
+				guards += 1
+		var score: float = p.distance_to(h["pos"]) + guards * 1.2 + rng.randf() * 3.0
+		if h["burning"]:
+			score -= 2.0
+		if score < best_score:
+			best_score = score
 			best = h
 	return best
 

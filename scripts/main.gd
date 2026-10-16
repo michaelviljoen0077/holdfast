@@ -693,6 +693,14 @@ func _build_battle() -> void:
 	if island_trait == "ruins" and mission == "defend":
 		_place_ruins()
 	commander.builder = builder
+	if Capture.has("formtest"):
+		var forms := ["line", "wedge", "ring", "block"]
+		var k := 0
+		for sq in battle.squads:
+			if sq.team == Battle.PLAYER:
+				sq.formation = forms[k % 4]
+				sq.assign_slots(nav, true)
+				k += 1
 	if Capture.has("testwalls") and tower:
 		# Test rig: ring the village with palisades so raiders must break in.
 		var c := Vector2(tower.position.x, tower.position.z)
