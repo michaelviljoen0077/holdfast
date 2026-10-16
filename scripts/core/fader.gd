@@ -3,6 +3,7 @@ extends CanvasLayer
 
 var _rect: ColorRect
 var _busy := false
+var _queued := ""
 
 
 func _ready() -> void:
@@ -17,6 +18,8 @@ func _ready() -> void:
 
 func go(scene_path: String, out_time := 0.35, in_time := 0.6) -> void:
 	if _busy:
+		# A request mid-fade is remembered and honoured once the fade settles.
+		_queued = scene_path
 		return
 	_busy = true
 	_rect.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -34,3 +37,7 @@ func go(scene_path: String, out_time := 0.35, in_time := 0.6) -> void:
 	await tw2.finished
 	_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_busy = false
+	if _queued != "":
+		var next := _queued
+		_queued = ""
+		go(next)

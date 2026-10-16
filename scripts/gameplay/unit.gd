@@ -59,7 +59,8 @@ var node: Node3D
 var body: MeshInstance3D
 var rig                        # UnitRig, when the visual is an animated character
 var can_rise := false          # draugr reassemble once after being cut down
-var heavy := false             # barely moved by knockback (bosses, champions)
+var heavy := false
+var counted := false           # death already tallied in battle stats             # barely moved by knockback (bosses, champions)
 var special_t := 0.0           # boss: seconds until the next slam
 var summon_t := 0.0            # boss: seconds until the next summoning
 var risen := false
@@ -206,6 +207,7 @@ func _update_rig(dt: float) -> void:
 ## Draugr pull themselves back together, once.
 func rise() -> void:
 	risen = true
+	counted = false
 	state = State.IDLE
 	hp = max_hp * 0.5
 	dead_t = 0.0

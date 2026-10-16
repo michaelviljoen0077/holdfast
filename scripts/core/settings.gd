@@ -8,6 +8,7 @@ const PATH := "user://settings.cfg"
 var master := 0.85
 var effects := 0.9
 var ambience := 0.75
+var music := 0.7
 var fullscreen := false
 var shadows_high := true
 var screen_shake := true
@@ -16,7 +17,7 @@ var tutorial_done := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	for bus_name in ["Effects", "Ambience"]:
+	for bus_name in ["Effects", "Ambience", "Music"]:
 		if AudioServer.get_bus_index(bus_name) < 0:
 			AudioServer.add_bus()
 			var i := AudioServer.bus_count - 1
@@ -33,6 +34,7 @@ func _load() -> void:
 	master = cf.get_value("audio", "master", master)
 	effects = cf.get_value("audio", "effects", effects)
 	ambience = cf.get_value("audio", "ambience", ambience)
+	music = cf.get_value("audio", "music", music)
 	fullscreen = cf.get_value("video", "fullscreen", fullscreen)
 	shadows_high = cf.get_value("video", "shadows_high", shadows_high)
 	screen_shake = cf.get_value("game", "screen_shake", screen_shake)
@@ -44,6 +46,7 @@ func save() -> void:
 	cf.set_value("audio", "master", master)
 	cf.set_value("audio", "effects", effects)
 	cf.set_value("audio", "ambience", ambience)
+	cf.set_value("audio", "music", music)
 	cf.set_value("video", "fullscreen", fullscreen)
 	cf.set_value("video", "shadows_high", shadows_high)
 	cf.set_value("game", "screen_shake", screen_shake)
@@ -55,6 +58,7 @@ func apply() -> void:
 	_set_bus("Master", master)
 	_set_bus("Effects", effects)
 	_set_bus("Ambience", ambience)
+	_set_bus("Music", music)
 	if not Capture.has("capture"):
 		var mode := DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED
 		if DisplayServer.window_get_mode() != mode:

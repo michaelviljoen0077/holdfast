@@ -4,17 +4,18 @@ config_version=5
 
 [application]
 
-config/name="TGN"
+config/name="Holdfast"
 config/description="Diorama real-time tactics roguelite (working title)."
 run/main_scene="res://scenes/title.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
+config/icon="res://icon.png"
 
 [autoload]
 
 Capture="*res://scripts/core/capture.gd"
+Settings="*res://scripts/core/settings.gd"
 Sfx="*res://scripts/core/audio.gd"
 Campaign="*res://scripts/core/campaign.gd"
-Settings="*res://scripts/core/settings.gd"
 Fader="*res://scripts/core/fader.gd"
 
 [display]

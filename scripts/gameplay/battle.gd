@@ -279,9 +279,25 @@ func _physics_process(dt: float) -> void:
 		_crush_check()
 
 
+var _step_t := {}
+var stats := {"slain": 0, "lost": 0}
+
+
 func _process(dt: float) -> void:
 	for u in units:
 		u.update_visual(dt)
+		if not u.alive() and not u.counted:
+			u.counted = true
+			stats["lost" if u.team == PLAYER else "slain"] += 1
+	# Marching squads: soft footfalls.
+	for s in squads:
+		if s.is_dead() or s.order == Squad.Order.HOLD:
+			continue
+		_step_t[s] = _step_t.get(s, 0.0) - dt
+		if _step_t[s] <= 0.0:
+			_step_t[s] = 0.28
+			var c := _centroid(s)
+			Sfx.play("step", Vector3(c.x, island.height_at(c.x, c.y), c.y), -13.0, 0)
 	for s in squads:
 		if s.banner:
 			var alive: int = s.alive_count()
@@ -518,6 +534,9 @@ func _resolve_attack(u: Unit) -> void:
 		Sfx.play("clash", hit_pos, -4.0)
 		return
 	t.take_hit(u.damage, u.pos)
+	Sfx.play("slash", hit_pos, -9.0, 60)
+	if u.damage >= 2.0:
+		Sfx.play("heavy", hit_pos, -4.0, 50)
 	if u.kind == "jarl":
 		_cleave(u, t)
 	_puff(hit_pos, 3, Color(0.85, 0.8, 0.7, 0.8))
@@ -660,7 +679,7 @@ func _update_arrows(dt: float) -> void:
 				# Missed: stick into the ground at an angle.
 				a["stuck_t"] = 0.0
 				node.position.y -= 0.12
-				Sfx.play("arrow_hit", p, -14.0, 50)
+				Sfx.play("arrow_ground", p, -12.0, 50)
 				if p.y < 0.0:
 					_splash(Vector3(p.x, 0.02, p.z))
 					node.queue_free()
@@ -807,6 +826,11 @@ func topple_tower(direction: Vector2) -> bool:
 	var hit := base + Vector3(-d.x * 1.2, 0.9, -d.y * 1.2)
 	tower.collapse(hit, 14.0)
 	Sfx.play("crumble", base + Vector3(0, 1.5, 0), 4.0, 0)
+	# Masonry clatter as the courses come down.
+	for k in 14:
+		var delay := 0.15 + randf() * 2.2
+		get_tree().create_timer(delay, false).timeout.connect(func():
+			Sfx.play("stone", base + Vector3(randf_range(-3, 3) + d.x * 2.0, 0.5, randf_range(-3, 3) + d.y * 2.0), -6.0, 0))
 	# Give the upper courses a shove so the whole tower leans out and falls.
 	for b in tower.blocks:
 		var h: float = b.position.y

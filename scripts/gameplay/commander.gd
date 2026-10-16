@@ -89,7 +89,7 @@ func select(s) -> void:
 	selected = s
 	if s != null:
 		s.selected = true
-		Sfx.play_ui("click", -10.0)
+		Sfx.play_ui("select", -6.0)
 	topple_armed = false
 	ability_state.emit(false)
 	selection_changed.emit(s)

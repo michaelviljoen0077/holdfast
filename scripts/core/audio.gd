@@ -13,6 +13,7 @@ var _last_play := {}        # name -> msec, to avoid machine-gun stacking
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_rng.seed = 1234
 	_banks["clash"] = [_clash(1.0), _clash(1.13), _clash(0.92), _clash(1.27)]
 	_banks["thud"] = [_thud(1.0), _thud(0.85), _thud(1.2)]
@@ -25,6 +26,19 @@ func _ready() -> void:
 	_banks["click"] = [_click(900.0)]
 	_banks["thunder"] = [_thunder()]
 	_banks["order"] = [_click(620.0)]
+	# Recorded CC0 sounds (Kenney) take over from the synthesised fallbacks.
+	_load_bank("clash", ["impactMetal_medium_000", "impactMetal_medium_001", "impactMetal_medium_002", "impactMetal_medium_003", "impactMetal_medium_004", "impactPlate_medium_000", "impactPlate_medium_001"])
+	_load_bank("thud", ["impactPunch_medium_000", "impactPunch_medium_001", "impactPunch_medium_002", "impactPunch_medium_003", "impactPunch_medium_004"])
+	_load_bank("heavy", ["impactSoft_heavy_000", "impactSoft_heavy_001", "impactSoft_heavy_002"])
+	_load_bank("slash", ["chop", "knifeSlice", "knifeSlice2", "drawKnife1"])
+	_load_bank("stone", ["impactMining_000", "impactMining_001", "impactMining_002", "impactMining_003", "impactMining_004"])
+	_load_bank("arrow_ground", ["impactWood_light_000", "impactWood_light_001", "impactWood_light_002"])
+	_load_bank("step", ["footstep_grass_000", "footstep_grass_001", "footstep_grass_002", "footstep_grass_003", "footstep_grass_004"])
+	_load_bank("coins", ["handleCoins", "handleCoins2"])
+	_load_bank("select", ["cloth1", "cloth2"])
+	_load_bank("victory", ["sting_victory"])
+	_load_bank("defeat", ["sting_defeat"])
+	_load_bank("cleared", ["sting_cleared"])
 	for i in 24:
 		var p := AudioStreamPlayer3D.new()
 		p.unit_size = 22.0
@@ -41,6 +55,7 @@ func _ready() -> void:
 		DirAccess.make_dir_recursive_absolute("res://shots/sfx")
 		for k in _banks:
 			(_banks[k][0] as AudioStreamWAV).save_to_wav("res://shots/sfx/%s.wav" % k)
+	_start_music()
 	_start_loop(_ocean(), -11.0, "Ocean")
 	_start_loop(_wind(), -20.0, "Wind")
 
@@ -63,11 +78,22 @@ func play(name: String, at: Vector3, volume_db := 0.0, gap_ms := 35) -> void:
 	p.play()
 
 
+func _load_bank(name: String, files: Array) -> void:
+	var bank := []
+	for f in files:
+		var path := "res://assets/audio/kenney/%s.ogg" % f
+		if ResourceLoader.exists(path):
+			bank.append(load(path))
+	if not bank.is_empty():
+		_banks[name] = bank
+
+
 func play_ui(name: String, volume_db := -6.0) -> void:
 	if not _banks.has(name):
 		return
 	var p := AudioStreamPlayer.new()
-	p.stream = _banks[name][0]
+	var bank: Array = _banks[name]
+	p.stream = bank[_rng.randi() % bank.size()]
 	p.volume_db = volume_db
 	p.bus = "Effects"
 	p.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -361,3 +387,52 @@ func _rain() -> AudioStreamWAV:
 		if _rng.randf() < 0.002:
 			b[i] += _rng.randf_range(0.3, 0.8)
 	return _to_wav(_normalize(_make_loopable(b, 1.0), 0.6), true)
+
+
+# Music -----------------------------------------------------------------------
+
+var _calm: AudioStreamPlayer
+var _battle: AudioStreamPlayer
+var _intensity := 0.0
+var _intensity_target := 0.0
+
+
+func _start_music() -> void:
+	_calm = _music_player("res://assets/audio/music/calm.wav")
+	_battle = _music_player("res://assets/audio/music/battle.wav")
+	_apply_intensity()
+
+
+func _music_player(path: String) -> AudioStreamPlayer:
+	var p := AudioStreamPlayer.new()
+	p.bus = "Music"
+	p.process_mode = Node.PROCESS_MODE_ALWAYS
+	if ResourceLoader.exists(path):
+		var w: AudioStreamWAV = load(path)
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		w.loop_begin = 0
+		w.loop_end = int(w.get_length() * w.mix_rate)
+		p.stream = w
+	add_child(p)
+	if p.stream:
+		p.play()
+	return p
+
+
+## 0 = calm theme only, 1 = full battle theme. Changes glide over a few seconds.
+func set_music_intensity(v: float) -> void:
+	_intensity_target = clampf(v, 0.0, 1.0)
+
+
+func _process(dt: float) -> void:
+	var real := dt / maxf(Engine.time_scale, 0.01)
+	_intensity = move_toward(_intensity, _intensity_target, real / 3.0)
+	_apply_intensity()
+
+
+func _apply_intensity() -> void:
+	if _calm == null:
+		return
+	# Equal-power crossfade.
+	_calm.volume_db = linear_to_db(maxf(cos(_intensity * PI * 0.5), 0.001)) - 4.0
+	_battle.volume_db = linear_to_db(maxf(sin(_intensity * PI * 0.5), 0.001)) - 3.0

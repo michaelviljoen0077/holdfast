@@ -506,7 +506,11 @@ func _build_battle() -> void:
 	add_child(commander)
 	commander.setup(battle, nav, island, rig)
 	battle.impact.connect(commander.impact)
-	director.wave_cleared.connect(func(_i): commander.dramatic(1.4))
+	director.wave_cleared.connect(func(_i):
+		commander.dramatic(1.4)
+		Sfx.play_ui("cleared", -6.0))
+	director.victory.connect(func(): Sfx.play_ui("victory", -3.0))
+	director.defeat.connect(func(): Sfx.play_ui("defeat", -3.0))
 
 	hud = Hud.new()
 	add_child(hud)
@@ -602,12 +606,22 @@ func _continue_campaign() -> void:
 		if s.team == Battle.PLAYER and s.has_meta("roster_id"):
 			survivors[s.get_meta("roster_id")] = s.alive_count()
 	var won: bool = director.raiders_alive() == 0 and survivors.values().any(func(v): return v > 0)
-	Campaign.finish_island(won, battle.intact_houses().size(), battle.houses.size(), survivors)
+	Campaign.finish_island(won, battle.intact_houses().size(), battle.houses.size(), survivors, battle.stats["slain"], battle.stats["lost"])
 	Engine.time_scale = 1.0
 	Fader.go("res://scenes/camp.tscn")
 
 
 func _process(dt: float) -> void:
+	if battle and director and not attract:
+		var ashore := 0
+		for u in battle.units:
+			if u.team == Battle.RAIDERS and u.alive() and not u.boarded:
+				ashore += 1
+		var sailing := 0
+		for b in director.boats:
+			if b["state"] == "sail":
+				sailing += 1
+		Sfx.set_music_intensity(0.0 if ended else clampf(ashore / 6.0 + sailing * 0.25, 0.0, 1.0))
 	if attract:
 		rig.set_view(rad_to_deg(rig.yaw) + dt * 2.5, -34.0, 48.0, Vector3(0, 1.0, 0), false)
 		if _attract_restart > 0.0:

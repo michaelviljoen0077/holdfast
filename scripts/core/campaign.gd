@@ -27,6 +27,7 @@ var current: Dictionary = {}        # island being fought
 var rng := RandomNumberGenerator.new()
 var _next_id := 0
 var last_result := {}
+var totals := {"islands": 0, "slain": 0, "lost": 0, "houses": 0}
 
 
 func new_campaign(p_seed := -1) -> void:
@@ -36,12 +37,14 @@ func new_campaign(p_seed := -1) -> void:
 	roster.clear()
 	_next_id = 0
 	_add_squad("shield")
+	_add_squad("sword")
 	_add_squad("archer")
 	_build_chart()
 	column = -1
 	node_i = 0
 	current = {}
 	last_result = {}
+	totals = {"islands": 0, "slain": 0, "lost": 0, "houses": 0}
 	changed.emit()
 	save_game()
 
@@ -72,7 +75,8 @@ func _build_chart() -> void:
 		var col := []
 		var count := 1 if c == COLUMNS - 1 else rng.randi_range(2, 3)
 		for i in count:
-			var difficulty := c + (1 if rng.randf() < 0.35 else 0)
+			# Gentle ramp: the first landfall is always the easiest.
+			var difficulty := 0 if c == 0 else maxi(0, c - 1 + (1 if rng.randf() < 0.4 else 0))
 			var node := {
 				"seed": rng.randi_range(1, 99999),
 				"difficulty": difficulty,
@@ -163,7 +167,11 @@ func waves_for(node: Dictionary) -> Array:
 # Results ---------------------------------------------------------------------
 
 ## Called when a battle ends. `survivors` maps roster id -> living unit count.
-func finish_island(won: bool, saved: int, total: int, survivors: Dictionary) -> void:
+func finish_island(won: bool, saved: int, total: int, survivors: Dictionary, slain := 0, lost := 0) -> void:
+	totals["islands"] += 1 if won else 0
+	totals["slain"] += slain
+	totals["lost"] += lost
+	totals["houses"] += saved if won else 0
 	var earned := saved * ISLAND_REWARD_PER_HOUSE if won else 0
 	if won and saved == total:
 		earned += 15
@@ -242,7 +250,7 @@ func save_game() -> void:
 	if not active or Capture.has("capture"):
 		return
 	var data := {"gold": gold, "roster": roster, "chart": chart, "column": column, "node_i": node_i,
-		"current": current, "last_result": last_result, "next_id": _next_id, "rng_state": rng.state}
+		"current": current, "last_result": last_result, "next_id": _next_id, "rng_state": rng.state, "totals": totals}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
 		f.store_var(data)
@@ -267,6 +275,7 @@ func load_game() -> bool:
 	last_result = data["last_result"]
 	_next_id = data["next_id"]
 	rng.state = data["rng_state"]
+	totals = data.get("totals", totals)
 	# `current` must alias the chart entry so marking it visited sticks.
 	current = chart[column][node_i] if column >= 0 else {}
 	active = true

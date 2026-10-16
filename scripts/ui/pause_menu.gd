@@ -42,6 +42,7 @@ func _ready() -> void:
 	_slider(_settings_box, "Master volume", Settings.master, func(v): Settings.master = v)
 	_slider(_settings_box, "Effects", Settings.effects, func(v): Settings.effects = v)
 	_slider(_settings_box, "Ambience", Settings.ambience, func(v): Settings.ambience = v)
+	_slider(_settings_box, "Music", Settings.music, func(v): Settings.music = v)
 	_toggle(_settings_box, "Fullscreen", Settings.fullscreen, func(v): Settings.fullscreen = v)
 	_toggle(_settings_box, "High quality shadows", Settings.shadows_high, func(v): Settings.shadows_high = v)
 	_toggle(_settings_box, "Screen shake", Settings.screen_shake, func(v): Settings.screen_shake = v)

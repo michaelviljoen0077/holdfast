@@ -3,6 +3,7 @@ extends Control
 ## island, and the war camp for spending gold on the warband.
 
 const UI := preload("res://scripts/ui/ui_theme.gd")
+const Portrait := preload("res://scripts/ui/unit_portrait.gd")
 
 const PARCHMENT := Color(0.87, 0.80, 0.64)
 const PARCHMENT_DARK := Color(0.70, 0.60, 0.43)
@@ -23,6 +24,7 @@ var _shapes := {}          # seed -> PackedVector2Array (unit blob)
 
 
 func _ready() -> void:
+	Sfx.set_music_intensity(0.0)
 	theme = UI.theme()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	if not Campaign.active:
@@ -89,6 +91,8 @@ func _ready() -> void:
 	_refresh()
 	if Campaign.is_over():
 		_show_end()
+	if Capture.has("autocampaign"):
+		_autopilot.call_deferred()
 
 
 func _process(dt: float) -> void:
@@ -322,7 +326,7 @@ func _refresh() -> void:
 			b.add_theme_font_size_override("font_size", 15)
 			b.pressed.connect(func():
 				Campaign.recruit(kind)
-				Sfx.play_ui("order", -6.0))
+				Sfx.play_ui("coins", -4.0))
 			rec.add_child(b)
 		_roster_box.add_child(UI.label("Recruit a new squad", 16, UI.INK_DIM))
 		_roster_box.add_child(rec)
@@ -337,8 +341,13 @@ func _refresh() -> void:
 func _squad_card(r: Dictionary) -> PanelContainer:
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", UI.box(Color(0.13, 0.1, 0.08, 0.95), UI.EDGE, 1))
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	p.add_child(h)
+	h.add_child(Portrait.new(r["kind"], 96))
 	var v := VBoxContainer.new()
-	p.add_child(v)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(v)
 	var top := HBoxContainer.new()
 	v.add_child(top)
 	top.add_child(UI.label(r["name"], 22, UI.INK, UI.bold()))
@@ -359,7 +368,7 @@ func _squad_card(r: Dictionary) -> PanelContainer:
 		ub.add_theme_font_size_override("font_size", 15)
 		ub.pressed.connect(func():
 			Campaign.unlock(r)
-			Sfx.play_ui("order", -6.0))
+			Sfx.play_ui("coins", -4.0))
 		row.add_child(ub)
 	var cost := Campaign.train_cost(r)
 	if cost > 0:
@@ -369,7 +378,7 @@ func _squad_card(r: Dictionary) -> PanelContainer:
 		tb.add_theme_font_size_override("font_size", 15)
 		tb.pressed.connect(func():
 			Campaign.train(r)
-			Sfx.play_ui("order", -6.0))
+			Sfx.play_ui("coins", -4.0))
 		row.add_child(tb)
 	return p
 
@@ -400,6 +409,10 @@ func _show_end() -> void:
 	var sub := UI.label("The isles are safe — for now." if won else "The raiders will remember these shores.", 22, UI.INK_DIM)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(sub)
+	var tt: Dictionary = Campaign.totals
+	var st := UI.label("Islands held %d    ·    Houses saved %d    ·    Raiders slain %d    ·    Soldiers lost %d" % [tt["islands"], tt["houses"], tt["slain"], tt["lost"]], 20, UI.GOLD)
+	st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(st)
 	var b := Button.new()
 	b.text = "Return to the title"
 	b.custom_minimum_size = Vector2(320, 56)
@@ -408,3 +421,24 @@ func _show_end() -> void:
 		Campaign.active = false
 		Fader.go("res://scenes/title.tscn"))
 	box.add_child(b)
+
+
+## Test autopilot: spend gold sensibly, then sail to the first reachable island.
+func _autopilot() -> void:
+	await get_tree().create_timer(0.5).timeout
+	var r: Dictionary = Campaign.last_result
+	print("CAMP column=%d gold=%d squads=%s last=%s" % [Campaign.column, Campaign.gold,
+		Campaign.living_squads().map(func(q): return "%s*%d%s" % [q["name"], q["level"], "+" if q["ability"] else ""]), r])
+	if Campaign.is_over():
+		print("CAMPAIGN OVER won=%s" % [r.get("won", false) and r.get("finale", false)])
+		get_tree().quit()
+		return
+	for q in Campaign.living_squads():
+		Campaign.unlock(q)
+	if Campaign.can_recruit():
+		Campaign.recruit(["shield", "sword", "archer"][Campaign.roster.size() % 3])
+	for q in Campaign.living_squads():
+		Campaign.train(q)
+	var options: Array = Campaign.reachable()
+	_picked = options[0]
+	_set_sail()

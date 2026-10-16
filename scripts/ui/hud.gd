@@ -111,8 +111,8 @@ func setup(p_battle, p_director, p_commander) -> void:
 
 	_end_panel = _panel()
 	_end_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_end_panel.position = Vector2(-260, -90)
-	_end_panel.custom_minimum_size = Vector2(520, 180)
+	_end_panel.position = Vector2(-380, -100)
+	_end_panel.custom_minimum_size = Vector2(760, 200)
 	_end_panel.visible = false
 	var v := VBoxContainer.new()
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -138,8 +138,8 @@ func setup(p_battle, p_director, p_commander) -> void:
 	director.victory.connect(func():
 		var saved: int = battle.intact_houses().size()
 		var total: int = battle.houses.size()
-		_end("The island holds" if saved == total else "Victory, at a cost", "%d of %d houses saved" % [saved, total]))
-	director.defeat.connect(func(): _end("Your warband has fallen", "%d of %d houses still stand" % [battle.intact_houses().size(), battle.houses.size()]))
+		_end("The island holds" if saved == total else "Victory, at a cost", _stat_line()))
+	director.defeat.connect(func(): _end("Your warband has fallen", _stat_line()))
 	commander.selection_changed.connect(func(_s): _refresh_cards())
 	_build_tutorial(root)
 	commander.ability_state.connect(func(armed: bool):
@@ -370,3 +370,13 @@ func _process(dt: float) -> void:
 		_hint.text = "Tactical pause  •  RMB move  •  F ability  •  Esc cancel"
 	else:
 		_hint.text = "LMB select  •  RMB move  •  F squad ability  •  Rest at a house to refit  •  T topple tower  •  WASD / Q E / wheel"
+
+
+func _stat_line() -> String:
+	var saved: int = battle.intact_houses().size()
+	var total: int = battle.houses.size()
+	var line := "Houses saved %d / %d    ·    Raiders slain %d    ·    Soldiers lost %d" % [saved, total, battle.stats["slain"], battle.stats["lost"]]
+	if Campaign.active and director.raiders_alive() == 0:
+		var gold := saved * Campaign.ISLAND_REWARD_PER_HOUSE + (15 if saved == total else 0)
+		line += "\n+%d gold" % gold
+	return line

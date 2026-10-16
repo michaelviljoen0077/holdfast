@@ -63,3 +63,16 @@ are replaced and the wounded healed (25 s cooldown).
 
 `./shoot.sh <name> [--cam=wide|close|top|follow|custom] [--seed=N] [--frames=N] [--speed=N] [--autoplay]`
 renders a screenshot to `shots/<name>.png` without stealing keyboard input.
+
+## Credits
+
+- Characters: KayKit Adventurers and KayKit Skeletons by Kay Lousberg (CC0)
+- Sound effects and stingers: Kenney Impact Sounds, RPG Audio and Music Jingles (CC0)
+- Fonts: Cinzel and Alegreya Sans (SIL Open Font License)
+- Music: composed and rendered in code by `tools/compose_music.py`
+- Everything else (terrain, props, water, effects, ambience) is generated in code.
+
+## Regenerating the music
+
+`python tools/compose_music.py` re-renders `assets/audio/music/calm.wav` and
+`battle.wav` (needs numpy, scipy and soundfile).

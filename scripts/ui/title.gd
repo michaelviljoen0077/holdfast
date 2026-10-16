@@ -8,6 +8,7 @@ var _backdrop: Node
 
 
 func _ready() -> void:
+	Sfx.set_music_intensity(0.0)
 	theme = UI.theme()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var Main := load("res://scripts/main.gd")
