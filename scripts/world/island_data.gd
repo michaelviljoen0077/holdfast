@@ -16,6 +16,8 @@ var x0 := 0.0
 var heights := PackedFloat32Array()
 var elevation := PackedFloat32Array()   # raw continuous field, for scatter masks
 var rng_seed := 0
+var archetype := "round"
+const ARCHETYPES := ["round", "ridge", "twin", "crescent", "atoll", "highland"]
 
 
 func _init(p_seed: int) -> void:
@@ -27,6 +29,14 @@ func _init(p_seed: int) -> void:
 	var warp := _fbm(p_seed + 11, 0.022, 3)
 	var detail := _fbm(p_seed + 23, 0.21, 2)
 	var beach := _fbm(p_seed + 37, 0.06, 2)
+	var ar := RandomNumberGenerator.new()
+	ar.seed = p_seed * 13 + 7
+	archetype = ARCHETYPES[ar.randi() % ARCHETYPES.size()]
+	if Capture.has("shape"):
+		archetype = Capture.arg("shape")
+	var spin := ar.randf() * TAU
+	var cs := cos(spin)
+	var sn := sin(spin)
 
 	heights.resize(res * res)
 	elevation.resize(res * res)
@@ -36,8 +46,35 @@ func _init(p_seed: int) -> void:
 			var z := x0 + j * step
 			var wx := x + warp.get_noise_2d(x, z) * 7.0
 			var wz := z + warp.get_noise_2d(x + 131.0, z - 71.0) * 7.0
-			var r := Vector2(wx * 0.92, wz * 1.08).length() / (60.0 * 0.33)
-			var e := 1.0 - pow(r, 2.0) * 1.15 + base.get_noise_2d(wx, wz) * 0.62
+			# Rotate into the archetype's own frame.
+			var u := wx * cs - wz * sn
+			var v := wx * sn + wz * cs
+			var r := Vector2(u * 0.92, v * 1.08).length() / (60.0 * 0.33)
+			var falloff := pow(r, 2.0) * 1.15
+			var lift := 0.0
+			match archetype:
+				"ridge":
+					# A long spine: steep sides, beaches at both tips.
+					falloff = pow(Vector2(u * 0.62, v * 1.55).length() / 19.8, 2.0) * 1.15
+					lift = 0.12
+				"twin":
+					# Two hills joined by a low saddle.
+					var r1 := Vector2(u - 8.5, v).length() / 13.0
+					var r2 := Vector2(u + 8.5, v).length() / 13.0
+					falloff = minf(pow(r1, 2.0), pow(r2, 2.0)) * 1.15 + 0.12
+				"crescent":
+					# A bay bitten out of one side.
+					var bite := Vector2(u - 9.0, v).length() / 9.5
+					falloff += maxf(0.0, 1.0 - bite) * 1.4
+				"atoll":
+					# A ring of land round a sheltered lagoon.
+					var ring := absf(r - 0.68) / 0.36
+					falloff = pow(ring, 2.0) * 1.15 + 0.05
+				"highland":
+					# A tall plateau with cliffs straight into the sea.
+					falloff = pow(r, 3.2) * 1.35
+					lift = 0.22
+			var e := 1.0 - falloff + lift + base.get_noise_2d(wx, wz) * 0.62
 			var k := j * res + i
 			elevation[k] = e
 			heights[k] = _shape(e, detail.get_noise_2d(x, z), beach.get_noise_2d(x, z))

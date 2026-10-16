@@ -770,9 +770,12 @@ func _build_battle() -> void:
 	var island_name: String = Campaign.current.get("name", "") if Campaign.active else ""
 	if island_name == "":
 		island_name = "Raider camp" if mission == "assault" else "Hold the island"
+	var shape_names := {"round": "", "ridge": "A long ridge", "twin": "Twin hills", "crescent": "A sheltered bay", "atoll": "An atoll round a lagoon", "highland": "Sheer highland cliffs"}
 	var trait_note := ""
+	if shape_names.get(island.archetype, "") != "":
+		trait_note = "  ·  " + shape_names[island.archetype]
 	if island_trait != "":
-		trait_note = "  ·  %s: %s" % [Campaign.TRAITS[island_trait]["name"], Campaign.TRAITS[island_trait]["desc"]]
+		trait_note += "  ·  %s: %s" % [Campaign.TRAITS[island_trait]["name"], Campaign.TRAITS[island_trait]["desc"]]
 	if atmosphere.preset_name == "storm":
 		trait_note += "  ·  Rain shortens bowshots"
 	elif atmosphere.preset_name == "night":
@@ -902,7 +905,7 @@ func _continue_campaign() -> void:
 		Fader.go("res://scenes/camp.tscn")
 		return
 	var won: bool = director.won
-	Campaign.finish_island(won, battle.intact_houses().size(), battle.houses.size(), survivors, battle.stats["slain"], battle.stats["lost"], battle.stats.get("boats", 0))
+	Campaign.finish_island(won, battle.intact_houses().size(), battle.houses.size(), survivors, battle.stats["slain"], battle.stats["lost"], battle.stats.get("boats", 0), battle.stats.get("haste_gold", 0))
 	Engine.time_scale = 1.0
 	Fader.go("res://scenes/camp.tscn")
 

@@ -21,6 +21,11 @@ var leash := 4.5
 var selected := false
 var color := Color.WHITE
 var goal_house                # raider objective (untyped house record)
+var role := ""                 # raider plan: burner | hunter | flanker
+var prey                       # hunter's target squad
+var replan_t := 0.0
+var march_t := 0.0             # Forced March boon: sprint time left after an order
+var still_t := 0.0             # seconds since this squad last moved
 var in_combat := false
 var refit_t := 0.0             # time spent resting at a house door
 var refit_cooldown := 0.0
@@ -96,6 +101,7 @@ func set_path(p: PackedVector2Array, attack := false) -> void:
 	path = p
 	path_i = 1 if p.size() > 1 else 0
 	order = Order.ATTACK_MOVE if attack else Order.MOVE
+	march_t = 4.0
 	if p.is_empty():
 		order = Order.HOLD
 

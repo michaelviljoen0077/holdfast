@@ -25,7 +25,8 @@ every run builds a different warband. In the war camp spend gold to teach
 abilities, train squads to three stars, recruit, buy timber or veteran
 recruits. A squad wiped out in battle is gone for good.
 
-Islands roll **weather** (clear, golden hour, overcast, storm, moonlit night)
+Every island has its own **shape** — a round isle, a long ridge, twin hills, a
+sheltered bay, an atoll round a lagoon, or sheer highland cliffs — and rolls its own **weather** (clear, golden hour, overcast, storm, moonlit night)
 and often a **trait** (Timberland, Prosperous, Haunted Shore, Old Ruins,
 Veteran Raiders, Fair Winds). Storms shorten bowshots and slow fires; at night
 longboats are only spotted when nearly ashore.
@@ -50,6 +51,15 @@ wall in build mode to tear it down (full refund before the first wave, half
 after). While longboats sail in, red dotted lines show the route each crew
 will march, so you can see where a wall matters.
 
+**Raiders think**: crews choose a plan as they land. Burners go for the
+least-guarded house and slip around your shieldwall if you block them;
+flankers swing wide; berserker crews hunt your crossbows and priests; enemy
+bowmen pick off soldiers pinned in melee. Each squad's banner shows its
+head-count and health.
+
+**Sound the horn (H)**: with the shore clear, call the next wave early for
+gold — the sooner, the more.
+
 **Militia (M)**: once per battle the village takes up arms — more houses
 standing, more militia.
 
@@ -71,6 +81,7 @@ out.
 | G | Cycle the selected squad's formation |
 | B | Build mode: drag to draw palisades, right-click a wall to remove it, Esc to leave |
 | M | Call the militia |
+| H | Sound the horn: bring the next wave now for gold |
 | T, then left click | Topple the tower in the clicked direction (crushes friend and foe) |
 | WASD / middle-drag | Pan |
 | Q / E / right-drag (nothing selected) | Orbit |

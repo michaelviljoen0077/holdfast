@@ -33,8 +33,8 @@ var rng := RandomNumberGenerator.new()
 
 var waves := [
 	{"delay": 7.0, "boats": ["raiders", "raiders"]},
-	{"delay": 40.0, "boats": ["torchbearers", "draugr", "bowmen"]},
-	{"delay": 45.0, "boats": ["chieftain", "raiders", "draugr"]},
+	{"delay": 40.0, "boats": ["torchbearers", "berserkers", "draugr", "bowmen"]},
+	{"delay": 45.0, "boats": ["chieftain", "raiders", "draugr", "berserkers", "bowmen"]},
 ]
 var wave_i := 0
 var wave_clock := 0.0
@@ -61,6 +61,19 @@ func setup(p_battle, p_island, p_nav, p_boat_mesh: Mesh, p_visuals: Dictionary, 
 	visuals = p_visuals
 	boat_material = p_mat
 	rng.seed = p_seed
+
+
+## Sound the horn: bring the next wave now. Returns the gold earned for haste.
+func call_early() -> int:
+	if wave_i >= waves.size() or raiders_alive() > 0:
+		return 0
+	var left := time_to_next_wave()
+	if left < 2.0:
+		return 0
+	var bonus := int(left * 0.6)
+	battle.stats["haste_gold"] = battle.stats.get("haste_gold", 0) + bonus
+	wave_clock = waves[wave_i]["delay"]
+	return bonus
 
 
 func time_to_next_wave() -> float:
@@ -345,7 +358,33 @@ func _think_raiders() -> void:
 		if still_hopping:
 			continue
 		var centre: Vector2 = battle._centroid(squad)
+		if squad.role == "":
+			_assign_role(squad)
+		# Hunters go for the warband's archers and priests.
+		if squad.role == "hunter":
+			var prey = squad.prey
+			if prey == null or prey.is_dead():
+				prey = _soft_target(centre)
+				squad.prey = prey
+			if prey != null:
+				var pd: Vector2 = battle._centroid(prey)
+				if squad.order == Squad.Order.HOLD or squad.destination().distance_to(pd) > 2.0:
+					var hp: PackedVector2Array = nav.find_path(squad.anchor, pd)
+					if not hp.is_empty():
+						squad.set_path(hp, true)
+				continue
+			squad.role = "burner"
 		var goal = squad.goal_house
+		squad.replan_t -= 0.5
+		# Re-plan when the target gets guarded: slip past the defence.
+		if goal != null and not goal["destroyed"] and squad.replan_t <= 0.0 and not squad.in_combat:
+			squad.replan_t = 4.0
+			if _guards(goal) >= 4:
+				var alt = _nearest_house(centre, goal)
+				if alt != null and _guards(alt) < 3:
+					goal = alt
+					squad.goal_house = alt
+					squad.path = PackedVector2Array()
 		if goal == null or goal["destroyed"]:
 			goal = _nearest_house(centre)
 			squad.goal_house = goal
@@ -353,6 +392,13 @@ func _think_raiders() -> void:
 		var dest := Vector2.INF
 		if goal != null:
 			dest = goal["door"]
+			# Flankers swing wide around the village before closing in.
+			if squad.role == "flanker" and centre.distance_to(dest) > 7.0:
+				var side := (dest - centre).orthogonal().normalized() * (5.0 if squad.units.size() % 2 == 0 else -5.0)
+				var wp: Vector2 = centre.lerp(dest, 0.55) + side
+				var wc: Vector2i = nav.nearest_walkable(wp, 6)
+				if wc.x >= 0:
+					dest = nav.cell_centre(wc.x, wc.y)
 		else:
 			var prey = _nearest_player_squad(centre)
 			if prey == null:
@@ -379,15 +425,21 @@ func _think_raiders() -> void:
 
 ## Raiders weigh distance against how well a house is guarded, so they drift
 ## toward the weak side of the village instead of always the nearest door.
-func _nearest_house(p: Vector2):
+func _guards(h) -> int:
+	var n := 0
+	for u in battle.units:
+		if u.team == battle.PLAYER and u.alive() and (u.pos as Vector2).distance_to(h["pos"]) < 4.5:
+			n += 1
+	return n
+
+
+func _nearest_house(p: Vector2, exclude = null):
 	var best = null
 	var best_score := INF
 	for h in battle.intact_houses():
-		var guards := 0
-		for u in battle.units:
-			if u.team == battle.PLAYER and u.alive() and (u.pos as Vector2).distance_to(h["pos"]) < 5.0:
-				guards += 1
-		var score: float = p.distance_to(h["pos"]) + guards * 1.2 + rng.randf() * 3.0
+		if h == exclude:
+			continue
+		var score: float = p.distance_to(h["pos"]) + _guards(h) * 2.5 + rng.randf() * 2.0
 		if h["burning"]:
 			score -= 2.0
 		if score < best_score:
@@ -550,3 +602,31 @@ func _assault_think_inner() -> void:
 			var p: PackedVector2Array = nav.find_path(g.anchor, dest)
 			if not p.is_empty():
 				g.set_path(p, true)
+
+
+## Crews pick a plan as they land: berserkers and chieftains hunt soft
+## targets, every third ordinary crew flanks, the rest go for the houses.
+func _assign_role(squad) -> void:
+	var heavy := false
+	for u in squad.units:
+		if u.kind in ["berserker", "chieftain"]:
+			heavy = true
+	if squad.kind == "berserker" or (heavy and rng.randf() < 0.5):
+		squad.role = "hunter"
+	elif rng.randf() < 0.35:
+		squad.role = "flanker"
+	else:
+		squad.role = "burner"
+
+
+func _soft_target(p: Vector2):
+	var best = null
+	var best_d := 22.0
+	for s in battle.squads:
+		if s.team != battle.PLAYER or s.is_dead() or not (s.kind in ["archer", "priest"]):
+			continue
+		var d: float = p.distance_to(battle._centroid(s))
+		if d < best_d:
+			best_d = d
+			best = s
+	return best

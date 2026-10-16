@@ -47,6 +47,8 @@ func setup(p_battle, p_director, p_commander) -> void:
 	_card_row.anchor_bottom = 1.0
 	_card_row.offset_top = -112
 	_card_row.offset_bottom = -44
+	_card_row.offset_right = -500
+	_card_row.offset_left = 24
 	_card_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_card_row)
 
@@ -81,6 +83,7 @@ func setup(p_battle, p_director, p_commander) -> void:
 	_ability.add_theme_stylebox_override("disabled", _box(Color(0.12, 0.11, 0.1, 0.6), Color(0.3, 0.28, 0.25), 2))
 	_ability.add_theme_color_override("font_color", INK)
 	_ability.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_ability.visible = false
 	_ability.position = Vector2(-320, -86)
 	_ability.custom_minimum_size = Vector2(290, 52)
 	_ability.focus_mode = Control.FOCUS_NONE
@@ -93,6 +96,7 @@ func setup(p_battle, p_director, p_commander) -> void:
 	_build_btn.add_theme_stylebox_override("pressed", _box(Color(0.45, 0.3, 0.12, 0.95), Color(1.0, 0.85, 0.5), 2))
 	_build_btn.add_theme_color_override("font_color", INK)
 	_build_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_build_btn.visible = false
 	_build_btn.position = Vector2(-320, -146)
 	_build_btn.custom_minimum_size = Vector2(290, 50)
 	_build_btn.focus_mode = Control.FOCUS_NONE
@@ -108,11 +112,13 @@ func setup(p_battle, p_director, p_commander) -> void:
 	_militia_btn.add_theme_stylebox_override("disabled", _box(Color(0.12, 0.11, 0.1, 0.6), Color(0.3, 0.28, 0.25), 2))
 	_militia_btn.add_theme_color_override("font_color", INK)
 	_militia_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_militia_btn.visible = false
 	_militia_btn.position = Vector2(-320, -202)
 	_militia_btn.custom_minimum_size = Vector2(290, 50)
 	_militia_btn.focus_mode = Control.FOCUS_NONE
 	_militia_btn.pressed.connect(func(): commander.call_militia())
 	root.add_child(_militia_btn)
+	_build_command_bar(root)
 	_build_tip = _label(17, INK)
 	_build_tip.visible = false
 	root.add_child(_build_tip)
@@ -138,7 +144,7 @@ func setup(p_battle, p_director, p_commander) -> void:
 	root.add_child(_boss_box)
 
 	_hint = _label(15, INK.darkened(0.25))
-	_hint.text = "LMB select  •  RMB move (drag to face)  •  F ability  •  G formation  •  B build  •  T topple  •  RMB enemy timber to burn it"
+	_hint.text = "LMB select  •  RMB move, drag to face  •  F ability  •  G formation"
 	_hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hint.position = Vector2(24, -36)
 	root.add_child(_hint)
@@ -420,6 +426,7 @@ Captives freed   %d" % [director.burned(), director.objectives.size(), director.
 		lines += "\nNext wave in   %d s" % int(ceil(next))
 	_status.text = lines
 	_ability.disabled = battle.tower == null or battle.tower.collapsed
+	_update_command_bar()
 	_militia_btn.disabled = battle.militia_called or battle.militia_size() <= 0
 	_militia_btn.text = "  Militia called  " if battle.militia_called else "  Call the militia [M]  ·  %d  " % battle.militia_size()
 	if commander.builder:
@@ -441,9 +448,9 @@ Captives freed   %d" % [director.burned(), director.objectives.size(), director.
 		var bld = commander.builder
 		_build_btn.text = ("  Placing palisade  ·  %d timber left  " if bld.active else "  Build palisade [B]  ·  %d timber  ") % int(bld.timber)
 	if commander.selected != null or commander.topple_armed or commander.ability_armed:
-		_hint.text = "Tactical pause  •  RMB move, drag to set facing  •  RMB a boat or wall to attack it  •  F ability  •  G formation  •  Esc cancel"
+		_hint.text = "Slowed time  •  RMB move or attack  •  F ability  •  G formation  •  Esc cancel"
 	else:
-		_hint.text = "LMB select  •  RMB move (drag to face)  •  F ability  •  G formation  •  B build  •  T topple  •  RMB enemy timber to burn it"
+		_hint.text = "LMB select  •  RMB move, drag to face  •  F ability  •  G formation"
 
 
 func _stat_line() -> String:
@@ -518,3 +525,70 @@ func _tips_tick(real_dt: float) -> void:
 			_tip("formation", "Press G to change a selected squad's formation: Line for a wide front, Wedge to charge, Ring to hold on all sides.")
 		if s.team == battle.PLAYER and s.alive_count() * 2 < s.units.size() and not s.is_dead():
 			_tip("refit", "Hurt squads can rest at a house door to refit, or press M to call the village militia.")
+
+
+# Command bar ---------------------------------------------------------------------
+# One compact strip, bottom right: Build, Militia, Topple, Horn. Each shows its
+# hotkey and live state; disabled commands dim instead of vanishing.
+
+var _cmd := {}
+
+
+func _build_command_bar(root: Control) -> void:
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 8)
+	bar.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	bar.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	bar.position = Vector2(-24, -84)
+	root.add_child(bar)
+	for spec in [["build", "B", "Build"], ["militia", "M", "Militia"], ["topple", "T", "Topple"], ["horn", "H", "Horn"]]:
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(112, 62)
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_stylebox_override("normal", _box(Color(0.14, 0.11, 0.08, 0.9), Color(0.55, 0.45, 0.3, 0.8), 1))
+		b.add_theme_stylebox_override("hover", _box(Color(0.24, 0.17, 0.1, 0.95), Color(1.0, 0.8, 0.45), 2))
+		b.add_theme_stylebox_override("pressed", _box(Color(0.34, 0.22, 0.1, 0.98), Color(1.0, 0.85, 0.5), 2))
+		b.add_theme_stylebox_override("disabled", _box(Color(0.1, 0.09, 0.08, 0.55), Color(0.3, 0.27, 0.24, 0.5), 1))
+		var v := VBoxContainer.new()
+		v.set_anchors_preset(Control.PRESET_FULL_RECT)
+		v.alignment = BoxContainer.ALIGNMENT_CENTER
+		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(v)
+		var top := _label(17, INK)
+		top.text = "%s  [%s]" % [spec[2], spec[1]]
+		top.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(top)
+		var sub := _label(14, Color(1.0, 0.82, 0.5))
+		sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(sub)
+		bar.add_child(b)
+		_cmd[spec[0]] = {"button": b, "sub": sub}
+	(_cmd["build"]["button"] as Button).pressed.connect(func():
+		if commander.builder:
+			commander.select(null)
+			commander.builder.toggle())
+	(_cmd["militia"]["button"] as Button).pressed.connect(func(): commander.call_militia())
+	(_cmd["topple"]["button"] as Button).pressed.connect(func(): topple_pressed.emit())
+	(_cmd["horn"]["button"] as Button).pressed.connect(func(): commander.sound_horn())
+	_cmd["bar"] = bar
+
+
+func _update_command_bar() -> void:
+	if _cmd.is_empty():
+		return
+	var bld = commander.builder
+	var b_build: Button = _cmd["build"]["button"]
+	(_cmd["build"]["sub"] as Label).text = ("placing" if bld.active else "%d timber" % int(bld.timber)) if bld else ""
+	b_build.disabled = bld == null
+	var b_mil: Button = _cmd["militia"]["button"]
+	b_mil.disabled = battle.militia_called or battle.militia_size() <= 0
+	(_cmd["militia"]["sub"] as Label).text = "called" if battle.militia_called else "%d villagers" % battle.militia_size()
+	var b_top: Button = _cmd["topple"]["button"]
+	b_top.disabled = battle.tower == null or battle.tower.collapsed
+	(_cmd["topple"]["sub"] as Label).text = "click to aim" if commander.topple_armed else ("fallen" if b_top.disabled else "once")
+	var b_horn: Button = _cmd["horn"]["button"]
+	var left: float = director.time_to_next_wave()
+	var can_horn: bool = left >= 2.0 and director.raiders_alive() == 0
+	b_horn.disabled = not can_horn
+	(_cmd["horn"]["sub"] as Label).text = ("+%d gold" % int(left * 0.6)) if can_horn else "—"
+	_cmd["bar"].visible = director.mode == "defend" and not _end_panel.visible

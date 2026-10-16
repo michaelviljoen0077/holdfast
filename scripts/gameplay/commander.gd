@@ -189,6 +189,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			arm_topple()
 		elif k == KEY_M:
 			call_militia()
+		elif k == KEY_H:
+			sound_horn()
 		elif k == KEY_B and builder:
 			select(null)
 			builder.toggle()
@@ -481,3 +483,12 @@ func _collider_at(screen: Vector2) -> Object:
 	var from := cam.project_ray_origin(screen)
 	var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + cam.project_ray_normal(screen) * 600.0))
 	return hit.get("collider")
+
+
+## Bring the next wave now, for gold.
+func sound_horn() -> void:
+	var director = get_parent().director
+	var gold: int = director.call_early()
+	if gold > 0:
+		Sfx.play_ui("horn", -4.0)
+		battle.message.emit("You sound the horn: they come now  (+%d gold)" % gold)

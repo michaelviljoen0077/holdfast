@@ -205,10 +205,7 @@ func _apply_stats(u: Unit) -> void:
 			u.damage = 2.0
 			u.cooldown = 1.3
 	if u.team == PLAYER:
-		if boon("drillmaster"):
-			u.max_hp *= 1.2
-		if boon("swift_march"):
-			u.speed *= 1.15
+		pass
 	if u.kind == "militia" and boon("militia_drill"):
 		u.max_hp *= 1.6
 		u.damage *= 1.3
@@ -248,6 +245,34 @@ func _make_banner(s: Squad) -> void:
 	pin.material_override = m
 	pin.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	b.add_child(pin)
+	# Health bar and head-count under the banner.
+	var bar := MeshInstance3D.new()
+	var bq := QuadMesh.new()
+	bq.size = Vector2(1, 1)
+	bar.mesh = bq
+	var bm := ShaderMaterial.new()
+	bm.shader = preload("res://shaders/squad_bar.gdshader")
+	bm.render_priority = 3
+	bar.material_override = bm
+	bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	bar.extra_cull_margin = 4.0
+	bar.set_instance_shader_parameter("bar_color", s.color.lightened(0.25))
+	bar.name = "Bar"
+	b.add_child(bar)
+	var count := Label3D.new()
+	count.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	count.fixed_size = true
+	count.no_depth_test = true
+	count.pixel_size = 0.0007
+	count.font_size = 26
+	count.outline_size = 9
+	count.modulate = Color(1, 0.97, 0.9)
+	count.outline_modulate = Color(0.05, 0.04, 0.03)
+	count.offset = Vector2(46, 6)
+	count.render_priority = 4
+	count.outline_render_priority = 3
+	count.name = "Count"
+	b.add_child(count)
 	add_child(b)
 	s.banner = b
 
@@ -339,7 +364,26 @@ signal structure_destroyed(structure)
 var stats := {"slain": 0, "lost": 0}
 
 
+var _banner_lift := {}
+
+
+## Spread banners vertically when squads crowd together so none hide another.
+func _layout_banners() -> void:
+	_banner_lift.clear()
+	var live := squads.filter(func(q): return not q.is_dead() and q.banner != null)
+	var spots := []
+	for q in live:
+		spots.append([q, _centroid(q)])
+	for i in spots.size():
+		var lift := 0.0
+		for j in i:
+			if (spots[i][1] as Vector2).distance_to(spots[j][1]) < 2.2:
+				lift = maxf(lift, _banner_lift.get(spots[j][0], 0.0) + 1.3)
+		_banner_lift[spots[i][0]] = lift
+
+
 func _process(dt: float) -> void:
+	_layout_banners()
 	for u in units:
 		u.update_visual(dt)
 		if not u.alive() and not u.counted:
@@ -360,7 +404,15 @@ func _process(dt: float) -> void:
 			s.banner.visible = alive > 0 and not get_parent().get("attract")
 			if alive > 0:
 				var c := _centroid(s)
-				var target := Vector3(c.x, island.height_at(c.x, c.y) + 1.25, c.y)
+				var target := Vector3(c.x, island.height_at(c.x, c.y) + 1.25 + _banner_lift.get(s, 0.0), c.y)
+				var hp_now := 0.0
+				var hp_max := 0.0
+				for u in s.units:
+					hp_max += u.max_hp
+					if u.alive():
+						hp_now += maxf(u.hp, 0.0)
+				(s.banner.get_node("Bar") as MeshInstance3D).set_instance_shader_parameter("fill", hp_now / maxf(hp_max, 0.001))
+				(s.banner.get_node("Count") as Label3D).text = str(alive)
 				s.banner.position = s.banner.position.lerp(target, clampf(dt * 10.0, 0.0, 1.0)) if s.banner.position != Vector3.ZERO else target
 				var sc := 1.35 if s.selected else 1.0
 				s.banner.scale = s.banner.scale.lerp(Vector3.ONE * sc, clampf(dt * 12.0, 0.0, 1.0))
@@ -388,6 +440,12 @@ func _update_squad(s: Squad, dt: float) -> void:
 	nav.raider_mode = s.team == RAIDERS
 	s.ability_cd = maxf(s.ability_cd - dt, 0.0)
 	s.ability_t = maxf(s.ability_t - dt, 0.0)
+	s.march_t = maxf(s.march_t - dt, 0.0)
+	s.still_t = s.still_t + dt if s.order == Squad.Order.HOLD else 0.0
+	if s.team == PLAYER and boon("drillmaster"):
+		var last := s.alive_count() * 2 <= s.units.size()
+		for u in s.units:
+			u.heavy = last
 	var before: int = s.order
 	var engaged := false
 	if s.order != Squad.Order.MOVE:
@@ -398,7 +456,7 @@ func _update_squad(s: Squad, dt: float) -> void:
 		pass
 	elif not (s.order == Squad.Order.ATTACK_MOVE and engaged):
 		var base := s.speed
-		s.speed = base * s.formation_speed()
+		s.speed = base * s.formation_speed() * (2.0 if (s.team == PLAYER and s.march_t > 0.0 and boon("swift_march")) else 1.0)
 		if s.charging():
 			s.speed = base * 1.9
 		s.advance(dt, nav)
@@ -440,6 +498,14 @@ func _update_unit(u: Unit, dt: float) -> void:
 	if u.target != null and (not u.target.alive() or u.target.boarded):
 		u.target = null
 	var hold_ground: bool = s.order == Squad.Order.MOVE and s.team == PLAYER
+	if u.attack_range > 0.0 and u.team == RAIDERS and (u.target == null or randf() < 0.02):
+		var pinned = null
+		for o in _query(u.pos, u.attack_range):
+			if o.team != u.team and o.alive() and o.target != null and not o.boarded and o.pos.distance_to(u.pos) <= u.attack_range:
+				pinned = o
+				break
+		if pinned != null:
+			u.target = pinned
 	if u.attack_range > 0.0:
 		var rng_now := u.attack_range * (1.25 if u.y > 1.0 + (0.0 if u.target == null else u.target.y) else 1.0)
 		if u.target == null or u.pos.distance_to(u.target.pos) > rng_now or randf() < 0.01:
@@ -535,6 +601,8 @@ func _update_unit(u: Unit, dt: float) -> void:
 			spd *= 0.2
 		if s.charging():
 			spd *= 1.9
+		if s.team == PLAYER and s.march_t > 0.0 and boon("swift_march"):
+			spd *= 2.0
 		want = to_goal / d * spd
 	want += _separation(u) * 2.2
 	u.vel = u.vel.lerp(want, clampf(dt * 9.0, 0.0, 1.0))
@@ -654,6 +722,7 @@ func _resolve_attack(u: Unit) -> void:
 	if u.damage >= 3.0:
 		impact.emit(0.7, hit_pos)
 	if not t.alive():
+		_on_kill(u)
 		_puff(Vector3(t.pos.x, t.y + 0.1, t.pos.y), 6, Color(0.75, 0.68, 0.55, 0.8))
 		Sfx.play("death", hit_pos, -6.0, 80)
 
@@ -797,6 +866,8 @@ func _update_arrows(dt: float) -> void:
 				_puff(Vector3(tgt.pos.x, tgt.y + 0.3, tgt.pos.y), 3, Color(0.85, 0.8, 0.7, 0.8))
 				Sfx.play("arrow_hit", p, -5.0)
 				if not tgt.alive():
+					if shooter != null:
+						_on_kill(shooter)
 					Sfx.play("death", p, -6.0, 80)
 				node.queue_free()
 				arrows.remove_at(i)
@@ -1182,7 +1253,7 @@ func use_ability(s: Squad, at := Vector2.INF) -> bool:
 	s.ability_t = info["duration"]
 	if s.ability == "brace" and boon("iron_brace"):
 		s.ability_t = 10.0
-	s.ability_cd = info["cooldown"] * (0.7 if boon("war_horn") else 1.0)
+	s.ability_cd = info["cooldown"]
 	ability_used.emit(s)
 	return true
 
@@ -1357,6 +1428,9 @@ func add_structure(st) -> void:
 func _hit_structure(u: Unit, st) -> void:
 	if st.dead or st.distance_to(u.pos) > u.reach + 0.4:
 		return
+	if st.team == PLAYER and u.team == RAIDERS and boon("shield_and_spark") and randf() < 0.35:
+		u.take_hit(1.0, st.centre())
+		_emit(_sparks, Vector3(u.pos.x, u.y + 0.4, u.pos.y), 5, Color(1.0, 0.55, 0.15), 1.5)
 	var mult := 1.0
 	match u.kind:
 		"berserker", "chieftain", "sword":
@@ -1403,6 +1477,10 @@ func _damage_mult(u, t) -> float:
 		m *= 1.5 if (u.team == PLAYER and boon("eagle_perch")) else 1.25
 	if u.team == PLAYER and t.heavy and boon("giant_slayer"):
 		m *= 1.6
+	if u.team == PLAYER and boon("drillmaster") and u.squad != null and u.squad.alive_count() * 2 <= u.squad.units.size():
+		m *= 1.5
+	if t.team == PLAYER and boon("hold_the_line") and t.squad != null and t.squad.still_t > 3.0:
+		m *= 0.7
 	return m
 
 
@@ -1645,3 +1723,10 @@ func _extinguish(h: Dictionary) -> void:
 		print("EVENT house_doused")
 	_puff(Vector3(h["pos"].x, (h["node"] as Node3D).position.y + 1.2, h["pos"].y), 8, Color(0.85, 0.85, 0.85, 0.7))
 	message.emit("The fire is out")
+
+
+func _on_kill(killer) -> void:
+	if killer == null or killer.team != PLAYER or killer.squad == null:
+		return
+	if boon("war_horn"):
+		killer.squad.ability_cd = maxf(killer.squad.ability_cd - 2.0, 0.0)

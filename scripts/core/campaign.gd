@@ -40,17 +40,19 @@ const TRAITS := {
 const BOONS := {
 	"shield_bash": {"name": "Shield Bash", "desc": "When the Shieldwall blocks, the attacker is hurled back and staggered.", "glyph": "shield"},
 	"fire_bolts": {"name": "Fire Bolts", "desc": "Crossbows can set boats and walls alight from range.", "glyph": "flame"},
-	"drillmaster": {"name": "Drillmaster", "desc": "Every soldier in the warband has 20% more health.", "glyph": "star"},
-	"swift_march": {"name": "Swift March", "desc": "Squads move 15% faster.", "glyph": "boot"},
+	"drillmaster": {"name": "Last Stand", "desc": "A squad down to half strength fights 50% harder and can't be knocked back.", "glyph": "star"},
+	"swift_march": {"name": "Forced March", "desc": "For four seconds after any order, a squad sprints at double speed.", "glyph": "boot"},
 	"second_wind": {"name": "Second Wind", "desc": "Refitting at a house is twice as fast and ready again sooner.", "glyph": "house"},
 	"stout_timber": {"name": "Stout Timber", "desc": "+8 timber on every island, and palisades are half again as tough.", "glyph": "wall"},
 	"giant_slayer": {"name": "Giant-slayer", "desc": "+60% damage against chieftains, champions and the Jarl.", "glyph": "axe"},
-	"war_horn": {"name": "War Horn", "desc": "Squad abilities recharge 30% faster.", "glyph": "horn"},
+	"war_horn": {"name": "Bloodied Blades", "desc": "Every kill a squad makes cuts 2 seconds off its ability cooldown.", "glyph": "horn"},
 	"plunder": {"name": "Plunder", "desc": "Burnt longboats pay double, and every raider slain is worth a coin.", "glyph": "coin"},
 	"hallowed": {"name": "Hallowed Blades", "desc": "The Drowned you cut down stay down.", "glyph": "skull"},
 	"iron_brace": {"name": "Iron Brace", "desc": "Brace holds for 10 seconds instead of 6.", "glyph": "shield"},
 	"eagle_perch": {"name": "Eagle's Perch", "desc": "The high-ground bonus is doubled.", "glyph": "eye"},
 	"militia_drill": {"name": "Village Drill", "desc": "Called militia are twice as many and tougher.", "glyph": "fork"},
+	"shield_and_spark": {"name": "Kindling Wall", "desc": "Raiders who hack at your palisades catch fire.", "glyph": "flame"},
+	"hold_the_line": {"name": "Hold the Line", "desc": "A squad that hasn't moved for 3 seconds takes 30% less damage.", "glyph": "shield"},
 }
 
 
@@ -223,10 +225,10 @@ func waves_for(node: Dictionary) -> Array:
 	var d: int = node["difficulty"]
 	var plans := [
 		[["raiders"], ["raiders", "raiders"]],
-		[["raiders"], ["raiders", "raiders"], ["raiders", "berserkers"]],
-		[["raiders", "raiders"], ["torchbearers", "draugr"], ["raiders", "draugr", "bowmen"]],
-		[["raiders", "draugr"], ["draugr", "bowmen", "torchbearers"], ["chieftain", "raiders", "berserkers"]],
-		[["draugr", "raiders"], ["draugr", "draugr", "bowmen"], ["berserkers", "raiders", "bowmen"], ["chieftain", "draugr", "bowmen"]],
+		[["raiders", "raiders"], ["raiders", "berserkers"], ["torchbearers", "berserkers", "raiders"]],
+		[["raiders", "raiders"], ["torchbearers", "draugr", "berserkers"], ["raiders", "draugr", "bowmen", "berserkers"]],
+		[["raiders", "draugr", "berserkers"], ["draugr", "bowmen", "torchbearers"], ["chieftain", "raiders", "berserkers", "draugr"]],
+		[["draugr", "raiders", "berserkers"], ["draugr", "draugr", "bowmen", "torchbearers"], ["berserkers", "raiders", "bowmen"], ["chieftain", "draugr", "bowmen", "berserkers"]],
 		[["raiders", "berserkers"], ["draugr", "draugr", "bowmen"], ["chieftain", "raiders", "bowmen"], ["jarl", "draugr", "bowmen"]],
 	]
 	var plan: Array = plans[5] if node.get("finale", false) else plans[mini(d, 4)]
@@ -240,7 +242,8 @@ func waves_for(node: Dictionary) -> Array:
 # Results ---------------------------------------------------------------------
 
 ## Called when a battle ends. `survivors` maps roster id -> living unit count.
-func finish_island(won: bool, saved: int, total: int, survivors: Dictionary, slain := 0, lost := 0, boats := 0) -> void:
+func finish_island(won: bool, saved: int, total: int, survivors: Dictionary, slain := 0, lost := 0, boats := 0, haste := 0) -> void:
+	gold += haste
 	gold += boats * BOAT_BOUNTY
 	totals["islands"] += 1 if won else 0
 	totals["slain"] += slain
@@ -443,7 +446,7 @@ func reroll_boons() -> bool:
 
 ## Enemies harden as the voyage goes on.
 func enemy_toughness() -> float:
-	return 1.0 + 0.1 * maxi(column, 0) if active else 1.0
+	return 1.0 + 0.12 * maxi(column, 0) if active else 1.0
 
 
 ## Trait of the island being fought (campaign), or one rolled from the seed.
