@@ -20,6 +20,12 @@ campaign ends if the whole warband falls.
 
 **Quick Battle** drops you onto a random island with one of each squad.
 
+Islands roll their own weather: clear skies, golden hour, overcast, storm
+(rain, lightning, rough seas) or moonlit night (lanterns at every door).
+Later islands bring the Drowned: draugr that pull themselves back together
+once after being cut down, skeleton bowmen, and armoured champions. Raider
+chieftains quicken every raider around them.
+
 | Squad | Strength | Ability (F) |
 | --- | --- | --- |
 | Shieldwall | Blocks most frontal blows | **Brace**: an unbreakable front for 6 s; attackers are thrown back |
@@ -42,7 +48,8 @@ are replaced and the wounded healed (25 s cooldown).
 | Q / E / right-drag | Orbit |
 | Mouse wheel | Zoom |
 | Enter | After a campaign battle, return to the sea chart |
-| R / N / Esc | Quick battle: replay / new island / title |
+| Esc | Cancel the current order, otherwise open the pause menu (settings, restart, leave) |
+| R / N | Quick battle: replay / new island |
 | F12 | Screenshot to `shots/` |
 
 ## Layout

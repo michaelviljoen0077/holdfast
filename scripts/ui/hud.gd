@@ -119,9 +119,74 @@ func setup(p_battle, p_director, p_commander) -> void:
 		_end("The island holds" if saved == total else "Victory, at a cost", "%d of %d houses saved" % [saved, total]))
 	director.defeat.connect(func(): _end("Your warband has fallen", "%d of %d houses still stand" % [battle.intact_houses().size(), battle.houses.size()]))
 	commander.selection_changed.connect(func(_s): _refresh_cards())
-	show_banner("Hold the island", "Raiders are coming. Keep the village standing.", 5.0)
+	_build_tutorial(root)
 	commander.ability_state.connect(func(armed: bool):
 		_ability.text = "  Click where it should fall  " if armed else "  Topple the Tower   [T]  ")
+
+
+# Tutorial ----------------------------------------------------------------
+
+var _tut_panel: PanelContainer
+var _tut_label: Label
+var _tut_step := -1
+var _tut_t := 0.0
+const TUTORIAL := [
+	"Left-click one of your squads, or press 1, to select it.  Time slows while you decide.",
+	"Right-click the ground to march there.  The dotted line shows the route.",
+	"Watch the sea.  Longboats beach where raiders will land: meet them at the shore.",
+	"Select a squad and press F to use its ability.",
+	"Badly hurt squads can rest at a house door to refit.  Good luck.",
+]
+
+
+func _build_tutorial(root: Control) -> void:
+	if Settings.tutorial_done or Capture.has("capture"):
+		return
+	_tut_panel = PanelContainer.new()
+	_tut_panel.add_theme_stylebox_override("panel", _box(Color(0.1, 0.08, 0.06, 0.9), Color(1.0, 0.8, 0.45), 2))
+	_tut_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_tut_panel.position = Vector2(24, -150)
+	_tut_panel.custom_minimum_size = Vector2(560, 0)
+	_tut_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tut_label = _label(19, INK)
+	_tut_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_tut_label.custom_minimum_size = Vector2(530, 0)
+	_tut_panel.add_child(_tut_label)
+	root.add_child(_tut_panel)
+	commander.selection_changed.connect(func(s): if s != null and _tut_step == 0: _tut_next())
+	battle.ability_used.connect(func(_s): if _tut_step == 3: _tut_next())
+	_tut_next()
+
+
+func _tut_next() -> void:
+	_tut_step += 1
+	_tut_t = 0.0
+	if _tut_step >= TUTORIAL.size():
+		Settings.tutorial_done = true
+		Settings.save()
+		create_tween().tween_property(_tut_panel, "modulate:a", 0.0, 0.6)
+		return
+	_tut_label.text = "%d / %d    %s" % [_tut_step + 1, TUTORIAL.size(), TUTORIAL[_tut_step]]
+	_tut_panel.modulate.a = 0.0
+	create_tween().tween_property(_tut_panel, "modulate:a", 1.0, 0.4)
+
+
+func _tut_tick(real_dt: float) -> void:
+	if _tut_panel == null or _tut_step >= TUTORIAL.size():
+		return
+	_tut_t += real_dt
+	match _tut_step:
+		1:
+			for s in battle.squads:
+				if s.team == battle.PLAYER and s.order != 0:
+					_tut_next()
+					return
+		2:
+			if director.wave_i > 0 and _tut_t > 8.0:
+				_tut_next()
+		4:
+			if _tut_t > 9.0:
+				_tut_next()
 
 
 func show_banner(title: String, sub: String, secs: float) -> void:
@@ -256,6 +321,7 @@ func _make_card(s, index: int) -> Dictionary:
 
 func _process(dt: float) -> void:
 	var real_dt := dt / maxf(Engine.time_scale, 0.01)
+	_tut_tick(real_dt)
 	if _banner_t > 0.0:
 		_banner_t -= real_dt
 		var a := clampf(minf(_banner_t, 1.0), 0.0, 1.0)

@@ -59,6 +59,10 @@ var _bolt_t := 6.0
 var _flash := 0.0
 
 
+func label() -> String:
+	return {"clear": "Clear skies", "golden": "Golden hour", "overcast": "Overcast", "storm": "Storm", "night": "Moonlit night"}.get(preset_name, "")
+
+
 static func pick(seed_v: int) -> String:
 	if Capture.has("weather"):
 		return Capture.arg("weather")

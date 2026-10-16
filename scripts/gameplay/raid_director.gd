@@ -7,6 +7,7 @@ const Tex := preload("res://scripts/core/tex.gd")
 
 signal wave_started(index: int, total: int, boats: int)
 signal victory
+signal wave_cleared(index: int)
 signal defeat
 
 var battle
@@ -37,6 +38,7 @@ var wave_clock := 0.0
 var boats: Array = []      # {node, from, to, t, dur, squad, seats, state, unload_t, wade, wait}
 var finished := false
 var _ai_t := 0.0
+var _cleared_wave := 0
 
 const SEATS := [Vector3(-0.28, 0.08, -1.3), Vector3(0.28, 0.08, -1.3), Vector3(-0.28, 0.08, -0.68), Vector3(0.28, 0.08, -0.68),
 	Vector3(-0.28, 0.08, -0.06), Vector3(0.28, 0.08, -0.06), Vector3(-0.28, 0.08, 0.56), Vector3(0.28, 0.08, 0.56)]
@@ -81,6 +83,7 @@ func _physics_process(dt: float) -> void:
 	if _ai_t <= 0.0:
 		_ai_t = 0.5
 		_think()
+	_check_cleared()
 	_check_end()
 
 
@@ -387,3 +390,13 @@ func _announce(crew_type: String) -> void:
 		"chieftain":
 			battle.message.emit("A raider chieftain comes ashore")
 			Sfx.play_ui("horn", -2.0)
+
+
+func _check_cleared() -> void:
+	if wave_i == 0 or _cleared_wave == wave_i or raiders_alive() > 0:
+		return
+	for b in boats:
+		if b["state"] == "sail" or b["state"] == "unload":
+			return
+	_cleared_wave = wave_i
+	wave_cleared.emit(wave_i)

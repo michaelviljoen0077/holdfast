@@ -11,6 +11,7 @@ signal house_lost(house)
 signal message(text: String)
 signal squad_refitted(squad)
 signal ability_used(squad)
+signal impact(strength: float, at: Vector3)
 
 const REFIT_TIME := 3.0
 const REFIT_COOLDOWN := 25.0
@@ -500,6 +501,8 @@ func _resolve_attack(u: Unit) -> void:
 	t.take_hit(u.damage, u.pos)
 	_puff(hit_pos, 3, Color(0.85, 0.8, 0.7, 0.8))
 	Sfx.play("thud", hit_pos, -3.0)
+	if u.damage >= 3.0:
+		impact.emit(0.7, hit_pos)
 	if not t.alive():
 		_puff(Vector3(t.pos.x, t.y + 0.1, t.pos.y), 6, Color(0.75, 0.68, 0.55, 0.8))
 		Sfx.play("death", hit_pos, -6.0, 80)
@@ -802,6 +805,7 @@ func _crush_check() -> void:
 				continue
 			if absf(u.y + 0.3 - p.y) < 0.6 and u.pos.distance_to(Vector2(p.x, p.z)) < 0.5:
 				u.take_hit(10.0, Vector2(p.x, p.z) - Vector2(b.linear_velocity.x, b.linear_velocity.z).normalized())
+				impact.emit(0.5, p)
 				_puff(Vector3(u.pos.x, u.y + 0.2, u.pos.y), 5, Color(0.75, 0.68, 0.55, 0.8))
 
 
@@ -1017,6 +1021,7 @@ func _trample(u: Unit) -> void:
 			continue
 		u.charge_hits[o] = true
 		o.take_hit(1.0, u.pos)
+		impact.emit(0.35, Vector3(o.pos.x, o.y, o.pos.y))
 		o.knock += (o.pos - u.pos).normalized() * 3.0
 		_puff(Vector3(o.pos.x, o.y + 0.2, o.pos.y), 3, Color(0.85, 0.8, 0.7, 0.8))
 		Sfx.play("thud", Vector3(o.pos.x, o.y, o.pos.y), -2.0)

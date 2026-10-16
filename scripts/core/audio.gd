@@ -31,7 +31,7 @@ func _ready() -> void:
 		p.max_distance = 160.0
 		p.attenuation_filter_cutoff_hz = 9000.0
 		p.attenuation_filter_db = -8.0
-		p.bus = "Master"
+		p.bus = "Effects"
 		add_child(p)
 		_pool.append(p)
 	if Capture.has("dumpsfx"):
@@ -69,6 +69,8 @@ func play_ui(name: String, volume_db := -6.0) -> void:
 	var p := AudioStreamPlayer.new()
 	p.stream = _banks[name][0]
 	p.volume_db = volume_db
+	p.bus = "Effects"
+	p.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(p)
 	p.play()
 	p.finished.connect(p.queue_free)
@@ -89,6 +91,7 @@ func fire_loop() -> AudioStreamPlayer3D:
 	p.max_distance = 120.0
 	p.volume_db = -6.0
 	p.autoplay = true
+	p.bus = "Effects"
 	return p
 
 
@@ -97,6 +100,7 @@ func _start_loop(stream: AudioStreamWAV, db: float, node_name: String) -> void:
 	p.name = node_name
 	p.stream = stream
 	p.volume_db = db
+	p.bus = "Ambience"
 	add_child(p)
 	p.play()
 

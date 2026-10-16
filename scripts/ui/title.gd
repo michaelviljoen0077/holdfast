@@ -48,6 +48,11 @@ func _ready() -> void:
 	_button(col, "Quick Battle", func():
 		Campaign.active = false
 		_leave("res://scenes/main.tscn"))
+	_button(col, "Settings", func():
+		var pm := preload("res://scripts/ui/pause_menu.gd").new()
+		pm.allow_restart = false
+		pm.settings_only = true
+		add_child(pm))
 	_button(col, "Quit", func(): get_tree().quit())
 	var foot := UI.label("Characters: KayKit (CC0)  ·  Fonts: Cinzel, Alegreya Sans (OFL)", 14, Color(UI.INK_DIM, 0.7))
 	foot.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)

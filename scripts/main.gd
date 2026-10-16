@@ -18,6 +18,7 @@ const Director := preload("res://scripts/gameplay/raid_director.gd")
 const Commander := preload("res://scripts/gameplay/commander.gd")
 const Hud := preload("res://scripts/ui/hud.gd")
 const Atmosphere := preload("res://scripts/world/atmosphere.gd")
+const PauseMenu := preload("res://scripts/ui/pause_menu.gd")
 
 static var island_seed := 7
 static var attract := false     # title-screen backdrop: no HUD, self-playing
@@ -499,11 +500,17 @@ func _build_battle() -> void:
 	commander.name = "Commander"
 	add_child(commander)
 	commander.setup(battle, nav, island, rig)
+	battle.impact.connect(commander.impact)
+	director.wave_cleared.connect(func(_i): commander.dramatic(1.4))
 
 	hud = Hud.new()
 	add_child(hud)
 	hud.setup(battle, director, commander)
 	hud.card_pressed.connect(commander.select)
+	var island_name: String = Campaign.current.get("name", "") if Campaign.active else ""
+	if island_name == "":
+		island_name = "Hold the island"
+	hud.show_banner(island_name, "%s  ·  Raiders are coming. Keep the village standing." % atmosphere.label(), 5.0)
 	hud.topple_pressed.connect(commander.arm_topple)
 	if Capture.has("speed"):
 		Engine.time_scale = float(Capture.arg("speed"))
@@ -643,9 +650,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		match event.physical_keycode:
 			KEY_ESCAPE:
-				if ended or not Campaign.active:
+				if not get_tree().paused:
 					Engine.time_scale = 1.0
-					get_tree().change_scene_to_file("res://scenes/title.tscn")
+					add_child(PauseMenu.new())
 			KEY_R:
 				if Campaign.active:
 					return

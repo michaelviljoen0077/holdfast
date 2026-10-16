@@ -53,6 +53,8 @@ func set_view(p_yaw_deg: float, p_pitch_deg: float, p_dist: float, focus: Vector
 
 
 func add_shake(amount: float) -> void:
+	if not Settings.screen_shake:
+		return
 	_shake = minf(_shake + amount, 1.0)
 
 

@@ -28,6 +28,8 @@ var _preview_t := 0.0
 var _mouse := Vector2.ZERO
 var _time_target := 1.0
 var base_speed := 1.0         # overall game speed (debug fast-forward)
+var _hitstop := 0.0           # real seconds of near-freeze left
+var _dramatic := 0.0          # real seconds of slow motion left
 
 const TERRAIN_LAYER := 2
 
@@ -158,9 +160,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif k == KEY_F or k == KEY_SPACE:
 			trigger_ability()
 		elif k == KEY_ESCAPE:
-			select(null)
-			topple_armed = false
-			ability_state.emit(false)
+			if selected != null or topple_armed or ability_armed:
+				select(null)
+				topple_armed = false
+				ability_state.emit(false)
+				get_viewport().set_input_as_handled()
 
 
 func _player_squads() -> Array:
@@ -227,7 +231,15 @@ func _process(dt: float) -> void:
 	# Slow time while a squad is selected or the tower ability is armed.
 	_time_target = (0.22 if (selected != null or topple_armed) else 1.0) * base_speed
 	var real_dt := dt / maxf(Engine.time_scale, 0.01)
-	Engine.time_scale = lerpf(Engine.time_scale, _time_target, clampf(real_dt * 8.0, 0.0, 1.0))
+	if _dramatic > 0.0:
+		_dramatic -= real_dt
+		_time_target = minf(_time_target, 0.25 * base_speed)
+	if _hitstop > 0.0:
+		# Freeze snaps in instantly and releases instantly: a punch, not a blur.
+		_hitstop -= real_dt
+		Engine.time_scale = 0.06 * base_speed
+	else:
+		Engine.time_scale = lerpf(Engine.time_scale, _time_target, clampf(real_dt * 8.0, 0.0, 1.0))
 	if selected != null and selected.is_dead():
 		select(null)
 
@@ -318,3 +330,12 @@ func _dot(c: Vector3, r: float, col: Color) -> void:
 		_path_mesh.surface_add_vertex(c + Vector3(cos(a1), 0, sin(a1)) * r)
 		_path_mesh.surface_set_color(col)
 		_path_mesh.surface_add_vertex(c + Vector3(cos(a0), 0, sin(a0)) * r)
+
+
+func impact(strength: float, _at: Vector3) -> void:
+	_hitstop = maxf(_hitstop, 0.035 + strength * 0.05)
+	rig.add_shake(strength * 0.5)
+
+
+func dramatic(seconds: float) -> void:
+	_dramatic = seconds
