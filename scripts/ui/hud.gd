@@ -58,8 +58,9 @@ func setup(p_battle, p_director, p_commander) -> void:
 	_sub = _label(20, INK.darkened(0.12))
 	_sub.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_sub.position = Vector2(-500, 104)
-	_sub.size = Vector2(1000, 30)
+	_sub.position = Vector2(-460, 104)
+	_sub.size = Vector2(920, 60)
+	_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	root.add_child(_sub)
 
 	var status_panel := _panel()

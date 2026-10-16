@@ -12,6 +12,7 @@ var rig
 var _marks := {}           # boat dict id -> Decal
 var _mark_tex: ImageTexture
 var _t := 0.0
+var night := false
 
 
 func setup(p_director, p_battle, p_island, p_rig) -> void:
@@ -57,6 +58,8 @@ func _update_marks() -> void:
 	for b in director.boats:
 		if b["state"] != "sail" and b["state"] != "unload":
 			continue
+		if night and b["t"] < 0.55:
+			continue
 		var key: int = b["node"].get_instance_id()
 		live[key] = true
 		if not _marks.has(key):
@@ -88,6 +91,9 @@ func _draw() -> void:
 	var centre := vp * 0.5
 	for b in director.boats:
 		if b["state"] != "sail":
+			continue
+		# At night you only spot a longboat when it is nearly ashore.
+		if night and b["t"] < 0.55:
 			continue
 		var node: Node3D = b["node"]
 		var w := node.global_position + Vector3(0, 1.0, 0)

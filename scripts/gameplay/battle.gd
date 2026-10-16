@@ -198,6 +198,13 @@ func _apply_stats(u: Unit) -> void:
 		u.can_rise = false
 	if u.team == RAIDERS:
 		u.max_hp *= Campaign.enemy_toughness()
+		if isle_trait == "veterans":
+			u.max_hp *= 1.25
+		if isle_trait == "haunted" and u.can_rise:
+			u.rises_left = 2
+	# Rain dampens bowstrings and blinds the aim.
+	if weather == "storm" and u.attack_range > 0.0:
+		u.attack_range *= 0.75
 	# Veteran squads: tougher and harder-hitting per level.
 	var lvl: int = u.squad.level if u.squad != null else 1
 	u.max_hp *= 1.0 + 0.3 * (lvl - 1)
@@ -305,6 +312,8 @@ func _physics_process(dt: float) -> void:
 
 
 var _step_t := {}
+var isle_trait := ""                 # island isle_trait id
+var weather := "clear"
 var structures: Array = []
 signal structure_destroyed(structure)
 var stats := {"slain": 0, "lost": 0}
@@ -784,7 +793,7 @@ func _update_houses(dt: float) -> void:
 			if o.team == RAIDERS and o.alive() and o.target == null and o.pos.distance_to(h["pos"]) < 1.9:
 				raiders += 1
 		if raiders > 0:
-			h["hp"] -= dt * (0.35 + raiders * 0.15)
+			h["hp"] -= dt * (0.35 + raiders * 0.15) * (0.6 if weather == "storm" else 1.0)
 			if not h["burning"]:
 				h["burning"] = true
 				h["fx"] = _make_fire(h)

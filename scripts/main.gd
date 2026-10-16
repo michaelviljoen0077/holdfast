@@ -23,6 +23,7 @@ const PauseMenu := preload("res://scripts/ui/pause_menu.gd")
 static var island_seed := 7
 static var attract := false     # title-screen backdrop: no HUD, self-playing
 var mission := "defend"          # defend | assault
+var island_trait := ""
 var camp_spots: Dictionary = {}  # assault layout: longhouses, towers, pens, garrison, landing
 var ended := false
 var _attract_restart := -1.0
@@ -64,6 +65,7 @@ func _ready() -> void:
 		island_seed = randi_range(1, 99999)
 	if Capture.has("assault") or (Campaign.active and Campaign.current.get("type", "defend") == "assault"):
 		mission = "assault"
+	island_trait = Campaign.trait_for(Campaign.current if Campaign.active else {}, island_seed)
 	var t0 := Time.get_ticks_msec()
 	island = IslandData.new(island_seed)
 	nav = NavGrid.new(island)
@@ -606,6 +608,8 @@ func _build_battle() -> void:
 	battle.name = "Battle"
 	add_child(battle)
 	battle.setup(island, nav, prop_mat)
+	battle.isle_trait = island_trait
+	battle.weather = atmosphere.preset_name
 	battle.tower = tower
 	for h in house_records:
 		battle.register_house(h["pos"], h["node"], h["door"])
@@ -659,6 +663,7 @@ func _build_battle() -> void:
 	if mission == "assault":
 		_populate_camp(enemy_vis)
 	director.setup(battle, island, nav, Props.longboat(island_seed), enemy_vis, prop_mat, island_seed * 5 + 1)
+	director.isle_trait = island_trait
 	if Capture.has("boss"):
 		director.waves = [{"delay": 1.0, "boats": ["jarl"]}]
 	director.victory.connect(func(): battle.cheer(Battle.PLAYER))
@@ -684,7 +689,9 @@ func _build_battle() -> void:
 	commander.setup(battle, nav, island, rig)
 	var builder := preload("res://scripts/gameplay/builder.gd").new()
 	add_child(builder)
-	builder.setup(battle, nav, island, rig, Campaign.timber() if Campaign.active else 14.0)
+	builder.setup(battle, nav, island, rig, (Campaign.timber() if Campaign.active else 14.0) + (8.0 if island_trait == "timberland" else 0.0))
+	if island_trait == "ruins" and mission == "defend":
+		_place_ruins()
 	commander.builder = builder
 	if Capture.has("testwalls") and tower:
 		# Test rig: ring the village with palisades so raiders must break in.
@@ -714,13 +721,21 @@ func _build_battle() -> void:
 	hud.get_child(0).add_child(threats)
 	hud.get_child(0).move_child(threats, 0)
 	threats.setup(director, battle, island, rig)
+	threats.night = atmosphere.preset_name == "night"
 	var island_name: String = Campaign.current.get("name", "") if Campaign.active else ""
 	if island_name == "":
 		island_name = "Raider camp" if mission == "assault" else "Hold the island"
+	var trait_note := ""
+	if island_trait != "":
+		trait_note = "  ·  %s: %s" % [Campaign.TRAITS[island_trait]["name"], Campaign.TRAITS[island_trait]["desc"]]
+	if atmosphere.preset_name == "storm":
+		trait_note += "  ·  Rain shortens bowshots"
+	elif atmosphere.preset_name == "night":
+		trait_note += "  ·  Longboats are seen late"
 	if mission == "assault":
-		hud.show_banner(island_name, "%s  ·  Burn their longhouses. Free the captives." % atmosphere.label(), 5.0)
+		hud.show_banner(island_name, "%s  ·  Burn their longhouses. Free the captives.%s" % [atmosphere.label(), trait_note], 6.0)
 	else:
-		hud.show_banner(island_name, "%s  ·  Raiders are coming. Keep the village standing." % atmosphere.label(), 5.0)
+		hud.show_banner(island_name, "%s  ·  Raiders are coming. Keep the village standing.%s" % [atmosphere.label(), trait_note], 6.0)
 	hud.topple_pressed.connect(commander.arm_topple)
 	if Capture.has("speed"):
 		Engine.time_scale = float(Capture.arg("speed"))
@@ -920,3 +935,33 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F12:
 				var img := get_viewport().get_texture().get_image()
 				img.save_png("res://shots/manual_%d.png" % Time.get_ticks_msec())
+
+
+## Old Ruins: stone wall fragments of a long-gone fort, between village and shore.
+func _place_ruins() -> void:
+	if tower == null:
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = island_seed * 71
+	var tp := Vector2(tower.position.x, tower.position.z)
+	var placed := 0
+	for tries in 120:
+		if placed >= 4:
+			break
+		var a := rng.randf() * TAU
+		var p := tp + Vector2(cos(a), sin(a)) * rng.randf_range(6.0, 11.0)
+		var along := Vector2(cos(a + PI * 0.5), sin(a + PI * 0.5))
+		var p0 := p - along * 1.4
+		var p1 := p + along * 1.4
+		var ok := true
+		for k in 7:
+			var q := p0.lerp(p1, k / 6.0)
+			if not nav.is_walkable(nav.cell_of(q)) or absf(island.height_at(q.x, q.y) - island.height_at(p.x, p.y)) > 0.5 or battle.house_near(q, 1.6) != null:
+				ok = false
+		if not ok:
+			continue
+		var w := preload("res://scripts/gameplay/palisade.gd").new()
+		w.stone = true
+		battle.add_structure(w)
+		w.build(nav, island, p0, p1, Battle.PLAYER)
+		placed += 1

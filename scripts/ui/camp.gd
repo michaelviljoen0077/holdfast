@@ -297,6 +297,9 @@ func _update_detail() -> void:
 		var ap := Campaign.assault_plan(node)
 		_detail.text = "%s  —  A raider camp: %d longhouses to burn, %d captive pens, %d watchtowers." % [node["name"], ap["longhouses"], ap["pens"], ap["towers"]]
 		return
+	if node.get("trait", "") != "":
+		var tr: Dictionary = Campaign.TRAITS[node["trait"]]
+		what += "  %s: %s" % [tr["name"], tr["desc"]]
 	if drowned:
 		what += "  The Drowned walk here."
 	if chief:

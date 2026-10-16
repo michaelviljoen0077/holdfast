@@ -67,6 +67,7 @@ var perch_y := 0.0           # death already tallied in battle stats            
 var special_t := 0.0           # boss: seconds until the next slam
 var summon_t := 0.0            # boss: seconds until the next summoning
 var risen := false
+var rises_left := 1
 
 
 ## `visual` is a Mesh (procedural soldier) or a Dictionary {scene, keep, scale}.
@@ -209,7 +210,8 @@ func _update_rig(dt: float) -> void:
 
 ## Draugr pull themselves back together, once.
 func rise() -> void:
-	risen = true
+	rises_left -= 1
+	risen = rises_left <= 0
 	counted = false
 	state = State.IDLE
 	hp = max_hp * 0.5

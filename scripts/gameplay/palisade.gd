@@ -11,16 +11,17 @@ static var _rail_mesh: Mesh
 static var _wood: StandardMaterial3D
 
 var stakes: Array[RigidBody3D] = []
+var stone := false              # ruined stone wall: tougher, fireproof
 var rails: Array[MeshInstance3D] = []
 var _rest: Array[Transform3D] = []
 
 
 func build(p_nav, p_island, p_a: Vector2, p_b: Vector2, p_team := 0) -> void:
 	team = p_team
-	label = "Palisade"
-	flammable = true
+	label = "Ruined wall" if stone else "Palisade"
+	flammable = not stone
 	var length := p_a.distance_to(p_b)
-	max_hp = 30.0 + length * 14.0
+	max_hp = (30.0 + length * 14.0) * (3.0 if stone else (1.5 if Campaign.has_boon("stout_timber") else 1.0))
 	hp = max_hp
 	setup_footprint(p_nav, p_island, p_a, p_b, 0.34)
 	_ensure_meshes()
@@ -48,6 +49,14 @@ func build(p_nav, p_island, p_a: Vector2, p_b: Vector2, p_team := 0) -> void:
 		mi.material_override = _wood
 		var h := rng.randf_range(0.88, 1.08)
 		mi.scale = Vector3(1.0, h, 1.0)
+		if stone:
+			# Squat, crumbling stone blocks instead of stakes.
+			var bm := BoxMesh.new()
+			bm.size = Vector3(0.24, rng.randf_range(0.35, 0.85), 0.3)
+			mi.mesh = bm
+			mi.material_override = _stone_mat()
+			mi.scale = Vector3.ONE
+			mi.position.y = bm.size.y * 0.5
 		body.add_child(mi)
 		# Stakes lean a touch outward, never in perfect rows.
 		var lean := Basis(Vector3(cos(yaw), 0, -sin(yaw)), rng.randf_range(-0.06, 0.06)) * Basis(Vector3.UP, rng.randf() * TAU)
@@ -55,8 +64,8 @@ func build(p_nav, p_island, p_a: Vector2, p_b: Vector2, p_team := 0) -> void:
 		add_child(body)
 		stakes.append(body)
 		_rest.append(body.transform)
-	# Two lashing rails along the inside face.
-	for k in 2:
+	# Two lashing rails along the inside face (timber walls only).
+	for k in (0 if stone else 2):
 		var rail := MeshInstance3D.new()
 		rail.mesh = _rail_mesh
 		rail.material_override = _wood
@@ -150,3 +159,14 @@ func _break_apart(from: Vector2) -> void:
 func _on_ignite() -> void:
 	if battle:
 		battle.attach_fire(self, Vector3(centre().x, island.height_at(centre().x, centre().y) + 0.6, centre().y), 0.6)
+
+
+static var _stone: StandardMaterial3D
+
+
+static func _stone_mat() -> StandardMaterial3D:
+	if _stone == null:
+		_stone = StandardMaterial3D.new()
+		_stone.albedo_color = Color(0.55, 0.53, 0.49)
+		_stone.roughness = 0.95
+	return _stone

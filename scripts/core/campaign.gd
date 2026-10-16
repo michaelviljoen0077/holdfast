@@ -27,6 +27,15 @@ var timber_bonus := 0.0
 var boons: Array = []              # chosen boon ids
 var boon_choice: Array = []        # three ids on offer after a won island
 
+const TRAITS := {
+	"timberland": {"name": "Timberland", "desc": "Thick woods: +8 timber for palisades."},
+	"prosperous": {"name": "Prosperous", "desc": "A rich village: every saved house pays half again."},
+	"haunted": {"name": "Haunted Shore", "desc": "The Drowned join every wave, and rise twice."},
+	"ruins": {"name": "Old Ruins", "desc": "Stone walls of an older fort still stand."},
+	"veterans": {"name": "Veteran Raiders", "desc": "Hardened foes: tougher raiders, a richer reward."},
+	"fair_winds": {"name": "Fair Winds", "desc": "Slow seas: longboats take longer to arrive."},
+}
+
 const BOONS := {
 	"shield_bash": {"name": "Shield Bash", "desc": "When the Shieldwall blocks, the attacker is hurled back and staggered.", "glyph": "shield"},
 	"fire_bolts": {"name": "Fire Bolts", "desc": "Crossbows can set boats and walls alight from range.", "glyph": "flame"},
@@ -147,6 +156,7 @@ func _build_chart() -> void:
 				"finale": c == COLUMNS - 1,
 				"name": _island_name(),
 				"type": "assault" if (c >= 1 and c < COLUMNS - 1 and rng.randf() < 0.32) else "defend",
+				"trait": "" if (c == COLUMNS - 1 or rng.randf() < 0.35) else TRAITS.keys()[rng.randi() % TRAITS.size()],
 			}
 			col.append(node)
 		chart.append(col)
@@ -237,7 +247,13 @@ func finish_island(won: bool, saved: int, total: int, survivors: Dictionary, sla
 	totals["houses"] += saved if won else 0
 	if has_boon("plunder"):
 		gold += boats * BOAT_BOUNTY + slain
-	var earned := saved * ISLAND_REWARD_PER_HOUSE if won else 0
+	var per_house := float(ISLAND_REWARD_PER_HOUSE)
+	match current.get("trait", ""):
+		"prosperous":
+			per_house *= 1.5
+		"veterans":
+			per_house *= 1.3
+	var earned := int(saved * per_house) if won else 0
 	if won and saved == total:
 		earned += 15
 	gold += earned
@@ -427,3 +443,16 @@ func reroll_boons() -> bool:
 ## Enemies harden as the voyage goes on.
 func enemy_toughness() -> float:
 	return 1.0 + 0.1 * maxi(column, 0) if active else 1.0
+
+
+## Trait of the island being fought (campaign), or one rolled from the seed.
+static func trait_for(node: Dictionary, seed_v: int) -> String:
+	if Capture.has("trait"):
+		return Capture.arg("trait")
+	if not node.is_empty():
+		return node.get("trait", "")
+	var r := RandomNumberGenerator.new()
+	r.seed = seed_v * 29 + 5
+	if r.randf() < 0.35:
+		return ""
+	return TRAITS.keys()[r.randi() % TRAITS.size()]

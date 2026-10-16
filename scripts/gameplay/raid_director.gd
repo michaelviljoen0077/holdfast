@@ -41,6 +41,7 @@ var boats: Array = []      # {node, from, to, t, dur, squad, seats, state, unloa
 var finished := false
 var won := false
 var mode := "defend"           # defend | assault
+var isle_trait := ""
 var objectives: Array = []     # assault: longhouses that must burn
 var garrison: Array = []       # assault: defending squads
 var _alarm := false
@@ -84,7 +85,10 @@ func _physics_process(dt: float) -> void:
 	# pressure the player without stacking into an unwinnable pile.
 	wave_clock += dt * (1.0 if raiders_alive() < 6 else 0.35)
 	if wave_i < waves.size() and wave_clock >= waves[wave_i]["delay"]:
-		_launch_wave(waves[wave_i]["boats"])
+		var crews: Array = (waves[wave_i]["boats"] as Array).duplicate()
+		if isle_trait == "haunted" and not crews.has("draugr"):
+			crews.append("draugr")
+		_launch_wave(crews)
 		wave_i += 1
 		wave_clock = 0.0
 		wave_started.emit(wave_i, waves.size(), (waves[wave_i - 1]["boats"] as Array).size())
@@ -186,7 +190,7 @@ func _spawn_boat(site: Dictionary, index: int, crew_type := "raiders") -> void:
 	for i in squad.units.size():
 		var u = squad.units[i]
 		u.boarded = true
-	var b := {"node": node, "from": from, "to": to, "t": 0.0, "dur": from.distance_to(to) / 3.2,
+	var b := {"node": node, "from": from, "to": to, "t": 0.0, "dur": from.distance_to(to) / (2.0 if isle_trait == "fair_winds" else 3.2),
 		"squad": squad, "state": "sail", "unload_t": 0.0, "next": 0, "wade": site["wade"], "wait": 0.0}
 	boats.append(b)
 	_place_crew(b)
