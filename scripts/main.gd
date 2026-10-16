@@ -11,6 +11,12 @@ const Tex := preload("res://scripts/core/tex.gd")
 const CameraRig := preload("res://scripts/core/camera_rig.gd")
 const Tower := preload("res://scripts/gameplay/destructible_tower.gd")
 const Paths := preload("res://scripts/world/paths.gd")
+const NavGrid := preload("res://scripts/world/nav_grid.gd")
+const RampCarver := preload("res://scripts/world/ramp_carver.gd")
+const Battle := preload("res://scripts/gameplay/battle.gd")
+const Director := preload("res://scripts/gameplay/raid_director.gd")
+const Commander := preload("res://scripts/gameplay/commander.gd")
+const Hud := preload("res://scripts/ui/hud.gd")
 
 static var island_seed := 7
 
@@ -24,8 +30,15 @@ var prop_mat: ShaderMaterial
 var foliage_mat: ShaderMaterial
 var terrain_mat: ShaderMaterial
 var paths
-var squads: Array[Node3D] = []
-var boats: Array[Node3D] = []
+var nav
+var carver
+var scatter
+var house_records: Array = []
+var defender_spots: Array = []
+var battle
+var director
+var commander
+var hud
 
 
 func _ready() -> void:
@@ -33,13 +46,24 @@ func _ready() -> void:
 		island_seed = int(Capture.arg("seed"))
 	var t0 := Time.get_ticks_msec()
 	island = IslandData.new(island_seed)
+	nav = NavGrid.new(island)
+	carver = RampCarver.new(island, nav)
+	carver.run()
+	var rr := RandomNumberGenerator.new()
+	rr.seed = island_seed * 13
+	carver.add_shortcuts(4, rr)
+	nav.build_astar()
+	var t_nav := Time.get_ticks_msec()
+	print("nav + %d ramps in %d ms" % [carver.ramps.size(), t_nav - t0])
+	if Capture.has("navdump"):
+		_dump_nav()
 	noise_tex = Tex.noise(island_seed + 1, 512, 0.012, 5)
 	detail_tex = Tex.noise(island_seed + 2, 256, 0.05, 3)
 	_build_materials()
 	_build_environment()
 	_build_terrain()
 	_build_water()
-	var scatter := Scatter.new(island, island_seed)
+	scatter = Scatter.new(island, island_seed)
 	paths = Paths.new(island_seed)
 	scatter.paths = paths
 	_build_settlement(scatter)
@@ -51,8 +75,8 @@ func _ready() -> void:
 	scatter.build_trees(veg, foliage_mat)
 	scatter.build_rocks(veg, prop_mat)
 	scatter.build_grass(veg, _grass_material(), foliage_mat)
-	_build_raiders()
 	_build_camera()
+	_build_battle()
 	print("island %d built in %d ms" % [island_seed, Time.get_ticks_msec() - t0])
 	if Capture.has("pick"):
 		_debug_pick.call_deferred()
@@ -73,6 +97,27 @@ func _debug_pick() -> void:
 		var to := from + cam.project_ray_normal(px) * 500.0
 		var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, to))
 		print("pick %s -> %s" % [px, hit.get("position", "none")])
+
+
+func _dump_nav() -> void:
+	var img := Image.create(nav.n, nav.n, false, Image.FORMAT_RGB8)
+	var sizes: Dictionary = nav.component_sizes()
+	for k in nav.n * nav.n:
+		var c: int = nav.component[k]
+		var h: float = nav.heights[k]
+		var col := Color(0.05, 0.1, 0.3) if h < 0.0 else Color(0.2, 0.2, 0.2)
+		if c >= 0 and h >= 0.0:
+			var hue := fposmod(c * 0.618, 1.0)
+			col = Color.from_hsv(hue, 0.7, 0.4 + 0.5 * clampf(h / 4.0, 0.0, 1.0))
+		img.set_pixel(k % nav.n, k / nav.n, col)
+	for r in carver.ramps:
+		for t in 20:
+			var p: Vector2 = (r["start"] as Vector2).lerp(r["end"], t / 19.0)
+			var c: Vector2i = nav.cell_of(p)
+			img.set_pixel(c.x, c.y, Color.WHITE)
+	img.resize(nav.n * 4, nav.n * 4, Image.INTERPOLATE_NEAREST)
+	img.save_png("res://shots/nav.png")
+	print("components: ", sizes)
 
 
 func _strike_after_frames(n: int) -> void:
@@ -115,7 +160,9 @@ func _build_environment() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.65
+	env.ambient_light_energy = 0.7
+	env.ambient_light_color = Color(0.62, 0.58, 0.52)
+	env.ambient_light_sky_contribution = 0.6
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
 	env.tonemap_exposure = 1.0
@@ -170,6 +217,7 @@ func _build_terrain() -> void:
 	m.set_shader_parameter("beach_h", island.BEACH_H)
 	m.set_shader_parameter("level_h", island.LEVEL_H)
 	mi.material_override = m
+	mi.layers = 1 | 2   # layer 2: receives UI decals
 	add_child(mi)
 	var body := StaticBody3D.new()
 	var cs := CollisionShape3D.new()
@@ -245,7 +293,7 @@ func _build_settlement(scatter) -> void:
 			continue
 		var ok := true
 		for p in placed:
-			if Vector2(c.x - p.x, c.z - p.z).length() < 3.0:
+			if Vector2(c.x - p.x, c.z - p.z).length() < (3.6 if p != tp else 3.4):
 				ok = false
 				break
 		if not ok:
@@ -263,131 +311,29 @@ func _build_settlement(scatter) -> void:
 		var door := Vector2(c.x, c.z) + Vector2(sin(mi.rotation.y), cos(mi.rotation.y)) * 0.95
 		paths.segment(Vector2(tp.x, tp.z), door)
 		paths.blob(door, 0.5)
+		house_records.append({"pos": Vector2(c.x, c.z), "node": mi, "door": Vector2(c.x, c.z) + Vector2(sin(mi.rotation.y), cos(mi.rotation.y)) * 1.3})
 		houses += 1
 	paths.blob(Vector2(tp.x, tp.z), 2.3)
 
-	# Defenders: two squads holding the village.
-	var blue := Color(0.20, 0.33, 0.62)
-	var gold := Color(0.92, 0.80, 0.42)
-	var soldier_mesh := Props.soldier(blue, gold, 3)
-	var spawned := 0
-	for attempt in 40:
-		if spawned >= 2:
-			break
+	# Rally points for the defending squads, around the village square.
+	var tries := 0
+	while defender_spots.size() < 3 and tries < 600:
+		tries += 1
 		var ang := rng.randf() * TAU
-		var centre := Vector2(tp.x, tp.z) + Vector2(cos(ang), sin(ang)) * rng.randf_range(2.8, 5.0)
-		var clear: bool = absf(island.height_at(centre.x, centre.y) - tp.y) < 0.15 and island.flatness(centre.x, centre.y, 0.8) < 0.1
-		for p in placed.slice(1) + squads.map(func(q: Node3D) -> Vector3: return q.get_meta("centre")):
-			if Vector2(centre.x - p.x, centre.y - p.z).length() < 2.4:
+		var reach := 2.8 + tries * 0.012
+		var centre := Vector2(tp.x, tp.z) + Vector2(cos(ang), sin(ang)) * rng.randf_range(2.8, reach + 2.0)
+		var clear: bool = absf(island.height_at(centre.x, centre.y) - tp.y) < 0.35 and island.flatness(centre.x, centre.y, 0.8) < 0.15
+		clear = clear and nav.is_walkable(nav.cell_of(centre)) and nav.component[nav.idx(nav.cell_of(centre))] == nav.component[nav.idx(nav.cell_of(Vector2(tp.x, tp.z) + Vector2(2.4, 0)))]
+		for p in placed.slice(1):
+			if Vector2(centre.x - p.x, centre.y - p.z).length() < 2.3:
+				clear = false
+		for q in defender_spots:
+			if centre.distance_to(q["pos"]) < 2.6:
 				clear = false
 		if not clear:
 			continue
-		# Face outward, toward the threat.
-		var squad := _spawn_squad(soldier_mesh, centre, atan2(centre.x - tp.x, centre.y - tp.z), 9)
-		squad.set_meta("centre", Vector3(centre.x, 0, centre.y))
-		squads.append(squad)
+		defender_spots.append({"pos": centre, "facing": atan2(centre.x - tp.x, centre.y - tp.z)})
 		scatter.block(centre.x, centre.y, 1.2)
-		spawned += 1
-
-
-func _spawn_squad(mesh: Mesh, centre: Vector2, facing: float, count: int) -> Node3D:
-	var squad := Node3D.new()
-	add_child(squad)
-	var cols := 3
-	for i in count:
-		var r := i / cols
-		var c := i % cols
-		var local := Vector2((c - 1) * 0.42, (r - 1) * 0.42).rotated(-facing)
-		var p := centre + local + Vector2(randf_range(-0.05, 0.05), randf_range(-0.05, 0.05))
-		var mi := MeshInstance3D.new()
-		mi.mesh = mesh
-		mi.material_override = prop_mat
-		mi.position = Vector3(p.x, island.height_at(p.x, p.y), p.y)
-		mi.rotation.y = facing + randf_range(-0.15, 0.15)
-		squad.add_child(mi)
-	return squad
-
-
-## Two longboats running in toward the most exposed beach.
-func _build_raiders() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = island_seed * 7 + 3
-	var red := Color(0.62, 0.16, 0.12)
-	var bone := Color(0.9, 0.84, 0.7)
-	var raider := Props.soldier(red, bone, 9, true)
-	var boat_mesh := Props.longboat(island_seed)
-	var base_ang := rng.randf() * TAU
-	for b in 2:
-		var ang := base_ang + (b - 0.5) * 0.45
-		var dir := Vector2(cos(ang), sin(ang))
-		# March inward from open sea until the water gets shallow.
-		var dist := 34.0
-		while dist > 10.0 and island.height_at(dir.x * dist, dir.y * dist) < -1.6:
-			dist -= 0.5
-		dist += 3.5 + b * 2.0
-		var pos := dir * dist
-		var boat := Node3D.new()
-		boat.name = "Longboat%d" % b
-		add_child(boat)
-		boat.position = Vector3(pos.x, 0.02, pos.y)
-		boat.rotation.y = atan2(-dir.x, -dir.y)
-		var hull := MeshInstance3D.new()
-		hull.mesh = boat_mesh
-		hull.material_override = prop_mat
-		boat.add_child(hull)
-		for i in 8:
-			var row := i / 2
-			var side := (i % 2) * 2 - 1
-			var mi := MeshInstance3D.new()
-			mi.mesh = raider
-			mi.material_override = prop_mat
-			mi.position = Vector3(side * 0.28, 0.08, -1.3 + row * 0.62)
-			mi.rotation.y = randf_range(-0.3, 0.3)
-			boat.add_child(mi)
-		boats.append(boat)
-		_add_wake(boat)
-
-
-func _add_wake(boat: Node3D) -> void:
-	var p := GPUParticles3D.new()
-	p.amount = 120
-	p.lifetime = 5.0
-	p.local_coords = false
-	p.position = Vector3(0, 0.05, -2.2)
-	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(0.5, 0.0, 0.2)
-	pm.direction = Vector3(0, 0, -1)
-	pm.spread = 25.0
-	pm.initial_velocity_min = 0.2
-	pm.initial_velocity_max = 0.5
-	pm.gravity = Vector3.ZERO
-	pm.scale_min = 0.6
-	pm.scale_max = 1.2
-	var sc := Curve.new()
-	sc.add_point(Vector2(0, 0.4))
-	sc.add_point(Vector2(1, 1.8))
-	var sct := CurveTexture.new()
-	sct.curve = sc
-	pm.scale_curve = sct
-	var g := Gradient.new()
-	g.set_color(0, Color(1, 1, 1, 0.75))
-	g.set_color(1, Color(1, 1, 1, 0.0))
-	var gt := GradientTexture1D.new()
-	gt.gradient = g
-	pm.color_ramp = gt
-	p.process_material = pm
-	var q := QuadMesh.new()
-	q.size = Vector2(0.5, 0.5)
-	q.orientation = PlaneMesh.FACE_Y
-	var m := StandardMaterial3D.new()
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.vertex_color_use_as_albedo = true
-	m.albedo_texture = Tex.radial_soft(64)
-	q.material = m
-	p.draw_pass_1 = q
-	boat.add_child(p)
 
 
 func _build_camera() -> void:
@@ -401,9 +347,6 @@ func _build_camera() -> void:
 		"close":
 			var tp: Vector3 = tower.position if tower else Vector3.ZERO
 			rig.set_view(20.0, -30.0, 22.0, tp + Vector3(0, 1.0, 0))
-		"boats":
-			var bp: Vector3 = boats[0].position if not boats.is_empty() else Vector3.ZERO
-			rig.set_view(rad_to_deg(boats[0].rotation.y) + 150.0, -28.0, 20.0, bp.lerp(Vector3.ZERO, 0.35))
 		"top":
 			rig.set_view(0.0, -80.0, 75.0, Vector3.ZERO)
 		"custom":
@@ -412,20 +355,96 @@ func _build_camera() -> void:
 			rig.set_view(float(v[0]), float(v[1]), float(v[2]), Vector3(float(v[3]), float(v[4]), float(v[5])))
 
 
+func _build_battle() -> void:
+	battle = Battle.new()
+	battle.name = "Battle"
+	add_child(battle)
+	battle.setup(island, nav, prop_mat)
+	battle.tower = tower
+	for h in house_records:
+		battle.register_house(h["pos"], h["node"], h["door"])
+
+	var blue := Color(0.20, 0.33, 0.62)
+	var gold := Color(0.92, 0.80, 0.42)
+	var spear_mesh := Props.soldier(blue, gold, 3)
+	var archer_mesh := Props.archer(Color(0.24, 0.42, 0.30), Color(0.85, 0.78, 0.55), 5)
+	var plan := [["spear", "Shieldwall", spear_mesh, 9], ["spear", "Spearmen", spear_mesh, 9], ["archer", "Archers", archer_mesh, 8]]
+	for i in mini(plan.size(), defender_spots.size()):
+		var spot: Dictionary = defender_spots[i]
+		battle.spawn_squad(Battle.PLAYER, plan[i][0], plan[i][1], plan[i][2], spot["pos"], plan[i][3], spot["facing"])
+
+	director = Director.new()
+	director.name = "RaidDirector"
+	add_child(director)
+	var raider_mesh := Props.soldier(Color(0.62, 0.16, 0.12), Color(0.9, 0.84, 0.7), 9, true)
+	director.setup(battle, island, nav, Props.longboat(island_seed), raider_mesh, prop_mat, island_seed * 5 + 1)
+	if Capture.has("wave"):
+		director.waves[0]["delay"] = float(Capture.arg("wave"))
+
+	commander = Commander.new()
+	commander.name = "Commander"
+	add_child(commander)
+	commander.setup(battle, nav, island, rig)
+
+	hud = Hud.new()
+	add_child(hud)
+	hud.setup(battle, director, commander)
+	hud.card_pressed.connect(commander.select)
+	hud.topple_pressed.connect(commander.arm_topple)
+	if Capture.has("speed"):
+		Engine.time_scale = float(Capture.arg("speed"))
+		commander.base_speed = Engine.time_scale
+		Engine.physics_ticks_per_second = 60
+		Engine.max_physics_steps_per_frame = 16
+
+
+var _auto_t := 0.0
+
+
+## Debug/demo autopilot: idle defenders march on the nearest raiders.
+func _autoplay(dt: float) -> void:
+	_auto_t -= dt
+	if _auto_t > 0.0:
+		return
+	_auto_t = 1.5
+	for s in battle.squads:
+		if s.team != battle.PLAYER or s.is_dead() or s.order != 0:
+			continue
+		var c: Vector2 = battle._centroid(s)
+		var best := Vector2.INF
+		for u in battle.units:
+			if u.alive() and u.team == battle.RAIDERS and not u.boarded and u.hop_t < 0.0:
+				if c.distance_to(u.pos) < c.distance_to(best):
+					best = u.pos
+		if best == Vector2.INF or c.distance_to(best) < (6.0 if s.kind == "archer" else 2.0):
+			continue
+		var goal: Vector2 = best if s.kind != "archer" else c.lerp(best, 1.0 - 7.0 / c.distance_to(best))
+		var p: PackedVector2Array = nav.find_path(s.anchor, goal)
+		if not p.is_empty():
+			s.set_path(p, false)
+
+
 func _process(dt: float) -> void:
-	for b in boats:
-		b.position += -b.global_transform.basis.z * 0.0 * dt
-		var t := Time.get_ticks_msec() * 0.001 + b.position.x
-		b.rotation.x = sin(t * 1.1) * 0.025
-		b.rotation.z = sin(t * 0.8) * 0.035
+	if battle:
+		scatter.update_tree_fade(battle.units, dt)
+	if Capture.has("autoplay") and battle:
+		_autoplay(dt)
+	# Capture helper: keep the camera on the fighting.
+	if Capture.arg("cam") == "follow" and battle:
+		var c := Vector2.ZERO
+		var n := 0
+		for u in battle.units:
+			if u.alive() and u.team == battle.RAIDERS and not u.boarded:
+				c += u.pos
+				n += 1
+		if n > 0:
+			c /= n
+			rig.set_view(rad_to_deg(rig.yaw), -38.0, 24.0, Vector3(c.x, island.height_at(c.x, c.y), c.y), false)
 
 
 func _strike_tower() -> void:
-	if tower == null or tower.collapsed:
-		return
-	var p: Vector3 = tower.global_position + Vector3(randf_range(-0.6, 0.6), 0.9, 1.0)
-	tower.collapse(p, 10.0)
-	rig.add_shake(0.8)
+	if battle and battle.topple_tower(Vector2(1, 0.3)):
+		rig.add_shake(1.0)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -433,9 +452,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
-			KEY_SPACE:
-				_strike_tower()
+			KEY_R:
+				Engine.time_scale = 1.0
+				get_tree().reload_current_scene()
 			KEY_N:
+				Engine.time_scale = 1.0
 				island_seed += 1
 				get_tree().reload_current_scene()
 			KEY_F12:

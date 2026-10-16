@@ -9,6 +9,7 @@ var forest_noise := FastNoiseLite.new()
 var meadow_noise := FastNoiseLite.new()
 var blocked: Array[Vector3] = []   # xz centre + radius (in .y) kept clear for buildings
 var paths   # optional path mask; grass and trees stay off worn ground
+var tree_sets: Array = []   # [{mm: MultiMesh, pos: PackedVector2Array, fade: PackedFloat32Array}]
 
 
 func _init(p_island, p_seed: int) -> void:
@@ -104,13 +105,16 @@ func build_trees(parent: Node3D, mat: ShaderMaterial) -> void:
 		if not _ground_ok(x, z, 0.86) or _is_blocked(x, z, 0.8):
 			continue
 		var f := forest_noise.get_noise_2d(x, z)
-		if f < 0.12:
-			if rng.randf() > 0.012:
+		# Groves, not blankets: open ground keeps the battle readable.
+		if f < 0.22:
+			if rng.randf() > 0.01:
 				continue
+		elif rng.randf() > 0.55:
+			continue
 		var p := Vector2(x, z)
 		var too_close := false
 		for q in placed:
-			if p.distance_squared_to(q) < 0.9:
+			if p.distance_squared_to(q) < 1.4:
 				too_close = true
 				break
 		if too_close:
@@ -127,7 +131,13 @@ func build_trees(parent: Node3D, mat: ShaderMaterial) -> void:
 		var bucket: Dictionary = (pines if use_pine else leafy)[rng.randi() % variants]
 		(bucket["x"] as Array[Transform3D]).append(xf)
 	for b in pines + leafy:
-		_spawn_multimesh(parent, b["mesh"], mat, b["x"], [], GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+		var mmi := _spawn_multimesh(parent, b["mesh"], mat, b["x"], [], GeometryInstance3D.SHADOW_CASTING_SETTING_ON, true)
+		var pos := PackedVector2Array()
+		var fade := PackedFloat32Array()
+		for xf in b["x"]:
+			pos.append(Vector2(xf.origin.x, xf.origin.z))
+			fade.append(0.0)
+		tree_sets.append({"mm": mmi.multimesh, "pos": pos, "fade": fade})
 
 
 func build_rocks(parent: Node3D, mat: ShaderMaterial) -> void:
@@ -157,16 +167,19 @@ func build_rocks(parent: Node3D, mat: ShaderMaterial) -> void:
 		_spawn_multimesh(parent, m["mesh"], mat, m["x"], [], GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
 
 
-func _spawn_multimesh(parent: Node3D, mesh: Mesh, mat: Material, xforms: Array, cols: Array, shadows: int) -> MultiMeshInstance3D:
+func _spawn_multimesh(parent: Node3D, mesh: Mesh, mat: Material, xforms: Array, cols: Array, shadows: int, custom := false) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = not cols.is_empty()
+	mm.use_custom_data = custom
 	mm.mesh = mesh
 	mm.instance_count = xforms.size()
 	for i in xforms.size():
 		mm.set_instance_transform(i, xforms[i])
 		if mm.use_colors:
 			mm.set_instance_color(i, cols[i])
+		if custom:
+			mm.set_instance_custom_data(i, Color(0, 0, 0, 0))
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.material_override = mat
@@ -230,3 +243,29 @@ func _flower_mesh() -> ArrayMesh:
 			st.set_uv(Vector2(0, 1.0))
 			st.add_vertex(v)
 	return st.commit()
+
+
+## Dithers out tree canopies that stand over units so fights stay readable.
+func update_tree_fade(units: Array, dt: float) -> void:
+	var pts := PackedVector2Array()
+	for u in units:
+		if u.alive() and not u.boarded:
+			pts.append(u.pos)
+	for set in tree_sets:
+		var pos: PackedVector2Array = set["pos"]
+		var fade: PackedFloat32Array = set["fade"]
+		var mm: MultiMesh = set["mm"]
+		for i in pos.size():
+			var near := false
+			var p := pos[i]
+			for q in pts:
+				# Units slightly "south" of the camera-facing side are hidden most.
+				if absf(q.x - p.x) < 1.6 and absf(q.y - p.y) < 1.6:
+					near = true
+					break
+			var target := 0.82 if near else 0.0
+			var f := move_toward(fade[i], target, dt * 2.5)
+			if f != fade[i]:
+				fade[i] = f
+				mm.set_instance_custom_data(i, Color(f, 0, 0, 0))
+		set["fade"] = fade

@@ -192,6 +192,46 @@ static func soldier(team: Color, trim: Color, p_seed: int, raider := false) -> A
 	return k.commit()
 
 
+## Archer: hooded, longbow in the left hand, quiver on the back. Faces +Z.
+static func archer(team: Color, trim: Color, p_seed: int) -> ArrayMesh:
+	var k := MeshKit.new(p_seed)
+	k.set_sway(0.0)
+	var skin := Color(0.88, 0.68, 0.54)
+	var dark := Color(0.22, 0.18, 0.15)
+	var wood := Color(0.48, 0.33, 0.2)
+	for sx in [-1, 1]:
+		k.box(Transform3D(Basis(), Vector3(sx * 0.045, 0.09, 0)), Vector3(0.06, 0.18, 0.075), dark)
+	k.cylinder(Transform3D.IDENTITY, 0.11, 0.085, 0.15, 0.39, 8, team)
+	k.cylinder(Transform3D.IDENTITY, 0.095, 0.095, 0.24, 0.265, 8, Color(0.36, 0.25, 0.15), false)
+	for sx in [-1, 1]:
+		k.box(Transform3D(Basis(Vector3(0, 0, 1), sx * 0.2), Vector3(sx * 0.11, 0.33, 0.02)), Vector3(0.055, 0.15, 0.065), team.darkened(0.12))
+	k.blob(Vector3(0, 0.46, 0.0), Vector3(0.064, 0.07, 0.064), skin, 0.0, 1)
+	# Hood with a pointed back.
+	k.blob(Vector3(0, 0.475, -0.012), Vector3(0.082, 0.082, 0.082), trim, 0.0, 1)
+	k.cylinder(Transform3D(Basis(Vector3(1, 0, 0), -1.2), Vector3(0, 0.49, -0.05)), 0.05, 0.0, 0.0, 0.1, 6, trim)
+	k.blob(Vector3(0, 0.465, 0.04), Vector3(0.05, 0.055, 0.03), skin, 0.0, 1)
+	# Quiver with fletchings.
+	var qx := Transform3D(Basis(Vector3(0, 0, 1), 0.35) * Basis(Vector3(1, 0, 0), -0.15), Vector3(0.05, 0.28, -0.1))
+	k.cylinder(qx, 0.035, 0.04, 0.0, 0.22, 6, Color(0.42, 0.26, 0.16))
+	for f in 3:
+		k.box(qx * Transform3D(Basis(), Vector3((f - 1) * 0.018, 0.25, 0.0)), Vector3(0.012, 0.06, 0.025), Color(0.92, 0.9, 0.84))
+	# Longbow: an arc of segments held at the left side.
+	var segs := 7
+	var prev := Vector3.ZERO
+	for i in segs + 1:
+		var t := float(i) / segs
+		var ang := (t - 0.5) * 1.9
+		var p := Vector3(-0.16, 0.32 + sin(ang) * 0.3, 0.06 + cos(ang) * 0.09 - 0.05)
+		if i > 0:
+			var mid := (p + prev) * 0.5
+			var dir := (p - prev).normalized()
+			var b := Basis(Quaternion(Vector3.UP, dir))
+			k.cylinder(Transform3D(b, mid), 0.012, 0.012, -prev.distance_to(p) * 0.5, prev.distance_to(p) * 0.5, 4, wood, false)
+		prev = p
+	k.cylinder(Transform3D(Basis(), Vector3(-0.16, 0.02, 0.01)), 0.003, 0.003, 0.0, 0.6, 3, Color(0.9, 0.88, 0.8), false)
+	return k.commit()
+
+
 ## Longboat hull lofted from cross sections, with shields, mast and sail.
 static func longboat(p_seed: int) -> ArrayMesh:
 	var k := MeshKit.new(p_seed)

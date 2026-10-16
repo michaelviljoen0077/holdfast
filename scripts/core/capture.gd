@@ -20,6 +20,9 @@ func _ready() -> void:
 	if _args.has("capture"):
 		_path = _args["capture"]
 		_target = int(_args.get("frames", "120"))
+		# Automated captures must never react to whatever the user is typing.
+		get_tree().root.set_disable_input(true)
+		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, true)
 
 
 func has(key: String) -> bool:

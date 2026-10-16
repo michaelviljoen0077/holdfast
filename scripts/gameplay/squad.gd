@@ -1,0 +1,133 @@
+extends RefCounted
+## A squad: a group of units sharing an anchor that moves along a nav path.
+## Units hold formation slots around the anchor and break ranks to fight.
+
+enum Order { HOLD, MOVE, ATTACK_MOVE }
+
+var team := 0
+var name := ""
+var kind := "spear"
+var units: Array = []
+var anchor := Vector2.ZERO
+var facing := 0.0
+var order := Order.HOLD
+var path := PackedVector2Array()
+var path_i := 0
+var speed := 2.0
+var spacing := 0.46
+var cols := 3
+var engage_radius := 3.8
+var leash := 4.5
+var selected := false
+var color := Color.WHITE
+var goal_house                # raider objective (untyped house record)
+var in_combat := false
+var banner: Node3D
+
+
+func alive_units() -> Array:
+	return units.filter(func(u): return u.alive())
+
+
+func alive_count() -> int:
+	var c := 0
+	for u in units:
+		if u.alive():
+			c += 1
+	return c
+
+
+func is_dead() -> bool:
+	return alive_count() == 0
+
+
+func set_path(p: PackedVector2Array, attack := false) -> void:
+	path = p
+	path_i = 1 if p.size() > 1 else 0
+	order = Order.ATTACK_MOVE if attack else Order.MOVE
+	if p.is_empty():
+		order = Order.HOLD
+
+
+func destination() -> Vector2:
+	return path[path.size() - 1] if not path.is_empty() else anchor
+
+
+## Advances the anchor along its path. Returns true on arrival.
+func advance(dt: float, nav) -> bool:
+	if order == Order.HOLD or path.is_empty():
+		return false
+	# Wait for stragglers so the formation arrives together.
+	var lag := 0.0
+	for u in units:
+		if u.alive():
+			lag = maxf(lag, u.pos.distance_to(u.slot))
+	var pace := speed * clampf(1.4 - lag * 0.35, 0.35, 1.0)
+	var step := pace * dt
+	while step > 0.0 and path_i < path.size():
+		var tgt := path[path_i]
+		var to := tgt - anchor
+		var d := to.length()
+		if d > 0.001:
+			var want := atan2(to.x, to.y)
+			facing = lerp_angle(facing, want, clampf(dt * 6.0, 0.0, 1.0))
+		if d <= step:
+			anchor = tgt
+			step -= d
+			path_i += 1
+		else:
+			anchor += to / d * step
+			step = 0.0
+	if path_i >= path.size():
+		order = Order.HOLD
+		return true
+	return false
+
+
+## World positions for each living unit's formation slot. Slot indices are
+## only reshuffled when `reassign` is set (new order, casualties), so units
+## don't swap places every frame.
+func assign_slots(nav, reassign := false) -> void:
+	var alive := alive_units()
+	var count := alive.size()
+	if count == 0:
+		return
+	var c := mini(cols, count)
+	var rows := int(ceil(float(count) / c))
+	var basis_x := Vector2(cos(facing), -sin(facing))   # local +x (right)
+	var basis_z := Vector2(sin(facing), cos(facing))    # local +z (forward)
+	# Slot order: nearest unit takes nearest slot so nobody crosses the block.
+	var offsets: Array[Vector2] = []
+	for i in count:
+		var r := i / c
+		var col := i % c
+		var in_row := mini(c, count - r * c)
+		var x := (col - (in_row - 1) * 0.5) * spacing
+		var z := ((rows - 1) * 0.5 - r) * spacing
+		var stagger := 0.08 * (1 if (r + col) % 2 == 0 else -1)
+		offsets.append(basis_x * (x + stagger) + basis_z * z)
+	var need := reassign
+	for u in alive:
+		if u.slot_i < 0 or u.slot_i >= count:
+			need = true
+	if need:
+		var taken := []
+		taken.resize(count)
+		taken.fill(false)
+		for u in alive:
+			var best := -1
+			var best_d := INF
+			for i in count:
+				if taken[i]:
+					continue
+				var d: float = (anchor + offsets[i]).distance_squared_to(u.pos)
+				if d < best_d:
+					best_d = d
+					best = i
+			taken[best] = true
+			u.slot_i = best
+	for u in alive:
+		var s: Vector2 = anchor + offsets[u.slot_i]
+		if not nav.clear_line(anchor, s):
+			s = anchor
+		u.slot = s

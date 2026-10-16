@@ -87,6 +87,8 @@ func _pan(v: Vector2) -> void:
 
 
 func _process(dt: float) -> void:
+	# Camera runs on real time, unaffected by tactical slow motion.
+	dt = dt / maxf(Engine.time_scale, 0.01)
 	var move := Vector2.ZERO if Capture.has("capture") else Input.get_vector("cam_left", "cam_right", "cam_back", "cam_forward")
 	if move != Vector2.ZERO:
 		_pan(Vector2(move.x, move.y) * _t_dist * 0.9 * dt)

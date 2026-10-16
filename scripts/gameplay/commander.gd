@@ -1,0 +1,282 @@
+extends Node3D
+## Player command layer: squad selection, move orders, path preview,
+## slow-motion while issuing orders, and the tower topple ability.
+
+const Squad := preload("res://scripts/gameplay/squad.gd")
+
+signal selection_changed(squad)
+signal ability_state(armed: bool)
+
+var battle
+var nav
+var island
+var rig
+var selected = null
+var hovered = null
+var topple_armed := false
+
+var _ring: Decal
+var _hover_ring: Decal
+var _dest: Decal
+var _dest_t := 0.0
+var _path_mesh: ImmediateMesh
+var _path_node: MeshInstance3D
+var _path_mat: StandardMaterial3D
+var _preview := PackedVector2Array()
+var _preview_t := 0.0
+var _mouse := Vector2.ZERO
+var _time_target := 1.0
+var base_speed := 1.0         # overall game speed (debug fast-forward)
+
+const TERRAIN_LAYER := 2
+
+
+func setup(p_battle, p_nav, p_island, p_rig) -> void:
+	battle = p_battle
+	nav = p_nav
+	island = p_island
+	rig = p_rig
+	_ring = _make_decal(_ring_texture(0.78, 0.92, Color(1, 1, 1, 1)), 2.4)
+	_hover_ring = _make_decal(_ring_texture(0.82, 0.9, Color(1, 1, 1, 0.55)), 2.4)
+	_dest = _make_decal(_ring_texture(0.55, 0.9, Color(1, 1, 1, 1)), 1.2)
+	_path_mesh = ImmediateMesh.new()
+	_path_node = MeshInstance3D.new()
+	_path_node.mesh = _path_mesh
+	_path_mat = StandardMaterial3D.new()
+	_path_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_path_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_path_mat.vertex_color_use_as_albedo = true
+	_path_mat.no_depth_test = false
+	_path_node.material_override = _path_mat
+	_path_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_path_node)
+
+
+func _make_decal(tex: Texture2D, size: float) -> Decal:
+	var d := Decal.new()
+	d.texture_albedo = tex
+	d.size = Vector3(size, 4.0, size)
+	d.cull_mask = 1 << (TERRAIN_LAYER - 1)
+	d.upper_fade = 0.2
+	d.lower_fade = 0.2
+	d.visible = false
+	add_child(d)
+	return d
+
+
+func _ring_texture(inner: float, outer: float, col: Color) -> ImageTexture:
+	var size := 128
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	for y in size:
+		for x in size:
+			var r := Vector2(x + 0.5 - size * 0.5, y + 0.5 - size * 0.5).length() / (size * 0.5)
+			var a := smoothstep(inner - 0.04, inner, r) * (1.0 - smoothstep(outer, outer + 0.04, r))
+			# Subtle dashes so it reads as UI, not a painted circle.
+			var ang := atan2(y - size * 0.5, x - size * 0.5)
+			a *= 1.0 if sin(ang * 12.0) > 0.0 else 0.75
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, col.a * a))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+func select(s) -> void:
+	if selected != null:
+		selected.selected = false
+	selected = s
+	if s != null:
+		s.selected = true
+	topple_armed = false
+	ability_state.emit(false)
+	selection_changed.emit(s)
+
+
+func arm_topple() -> void:
+	if battle.tower == null or battle.tower.collapsed:
+		return
+	select(null)
+	topple_armed = true
+	ability_state.emit(true)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if Capture.has("capture"):
+		return
+	if event is InputEventMouseMotion:
+		_mouse = event.position
+	elif event is InputEventMouseButton and event.pressed:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			if topple_armed:
+				var g := _ground_at(mb.position)
+				if g != Vector3.INF:
+					var tp: Vector3 = battle.tower.global_position
+					battle.topple_tower(Vector2(g.x - tp.x, g.z - tp.z))
+					rig.add_shake(1.0)
+				topple_armed = false
+				ability_state.emit(false)
+			else:
+				select(_pick_squad(mb.position))
+			get_viewport().set_input_as_handled()
+		elif mb.button_index == MOUSE_BUTTON_RIGHT and selected != null:
+			_order_move(mb.position)
+			get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and not event.echo:
+		var k: int = event.physical_keycode
+		if k >= KEY_1 and k <= KEY_9:
+			var mine := _player_squads()
+			var i := k - KEY_1
+			if i < mine.size():
+				select(mine[i])
+		elif k == KEY_T:
+			arm_topple()
+		elif k == KEY_ESCAPE:
+			select(null)
+			topple_armed = false
+			ability_state.emit(false)
+
+
+func _player_squads() -> Array:
+	return battle.squads.filter(func(s): return s.team == battle.PLAYER and not s.is_dead())
+
+
+func _pick_squad(screen: Vector2):
+	var cam: Camera3D = rig.camera
+	var best = null
+	var best_d := 60.0
+	for s in _player_squads():
+		var c: Vector2 = battle._centroid(s)
+		var w := Vector3(c.x, island.height_at(c.x, c.y) + 0.4, c.y)
+		if cam.is_position_behind(w):
+			continue
+		var d := cam.unproject_position(w).distance_to(screen)
+		var b: Vector3 = s.banner.global_position
+		d = minf(d, cam.unproject_position(b).distance_to(screen))
+		if d < best_d:
+			best_d = d
+			best = s
+	return best
+
+
+func _ground_at(screen: Vector2) -> Vector3:
+	var cam: Camera3D = rig.camera
+	var from := cam.project_ray_origin(screen)
+	var dir := cam.project_ray_normal(screen)
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 600.0)
+	q.collision_mask = 1
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		# Fall back to the water plane.
+		if absf(dir.y) < 1e-4:
+			return Vector3.INF
+		var t := -from.y / dir.y
+		return from + dir * t if t > 0.0 else Vector3.INF
+	return hit["position"]
+
+
+func _order_move(screen: Vector2) -> void:
+	var g := _ground_at(screen)
+	if g == Vector3.INF:
+		return
+	var path: PackedVector2Array = nav.find_path(selected.anchor, Vector2(g.x, g.z))
+	if path.is_empty():
+		_flash_dest(g, Color(1.0, 0.35, 0.3))
+		return
+	selected.set_path(path, false)
+	var end := path[path.size() - 1]
+	_flash_dest(Vector3(end.x, island.height_at(end.x, end.y), end.y), Color(0.95, 0.92, 0.75))
+	select(null)
+
+
+func _flash_dest(at: Vector3, col: Color) -> void:
+	_dest.position = at
+	_dest.modulate = col
+	_dest.visible = true
+	_dest_t = 1.0
+
+
+func _process(dt: float) -> void:
+	# Slow time while a squad is selected or the tower ability is armed.
+	_time_target = (0.22 if (selected != null or topple_armed) else 1.0) * base_speed
+	var real_dt := dt / maxf(Engine.time_scale, 0.01)
+	Engine.time_scale = lerpf(Engine.time_scale, _time_target, clampf(real_dt * 8.0, 0.0, 1.0))
+	if selected != null and selected.is_dead():
+		select(null)
+
+	if selected != null:
+		var c: Vector2 = battle._centroid(selected)
+		_ring.position = Vector3(c.x, island.height_at(c.x, c.y), c.y)
+		_ring.modulate = Color(0.55, 0.75, 1.0)
+		_ring.visible = true
+		var pulse := 1.0 + sin(Time.get_ticks_msec() * 0.008) * 0.04
+		_ring.scale = Vector3(pulse, 1.0, pulse)
+	else:
+		_ring.visible = false
+
+	hovered = null if selected != null else _pick_squad(_mouse)
+	if hovered != null:
+		var hc: Vector2 = battle._centroid(hovered)
+		_hover_ring.position = Vector3(hc.x, island.height_at(hc.x, hc.y), hc.y)
+		_hover_ring.modulate = Color(0.8, 0.9, 1.0)
+		_hover_ring.visible = true
+	else:
+		_hover_ring.visible = false
+
+	if _dest_t > 0.0:
+		_dest_t -= real_dt * 1.2
+		_dest.modulate.a = clampf(_dest_t, 0.0, 1.0)
+		var sc := 1.0 + (1.0 - _dest_t) * 0.6
+		_dest.scale = Vector3(sc, 1.0, sc)
+		if _dest_t <= 0.0:
+			_dest.visible = false
+
+	_preview_t -= real_dt
+	if selected != null and _preview_t <= 0.0:
+		_preview_t = 0.08
+		var g := _ground_at(_mouse)
+		_preview = nav.find_path(selected.anchor, Vector2(g.x, g.z)) if g != Vector3.INF else PackedVector2Array()
+	elif selected == null:
+		_preview = PackedVector2Array()
+	_draw_path()
+
+
+## Dotted path from the selected squad to the cursor, hugging the terrain.
+func _draw_path() -> void:
+	_path_mesh.clear_surfaces()
+	if _preview.size() < 2:
+		return
+	_path_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	var spacing := 0.32
+	var carry := 0.0
+	var total := 0.0
+	var anim := fmod(Time.get_ticks_msec() * 0.0012, spacing)
+	for i in range(1, _preview.size()):
+		var a := _preview[i - 1]
+		var b := _preview[i]
+		var seg := a.distance_to(b)
+		var dirv := (b - a) / maxf(seg, 0.001)
+		var d := spacing - carry + anim
+		while d < seg:
+			var p := a + dirv * d
+			var h := maxf(island.height_at(p.x, p.y), 0.0) + 0.06
+			var fade := clampf(total / 1.5, 0.0, 1.0)
+			_dot(Vector3(p.x, h, p.y), 0.055, Color(1.0, 0.97, 0.85, 0.85 * fade))
+			d += spacing
+		carry = seg - (d - spacing)
+		total += seg
+		anim = 0.0
+	var e := _preview[_preview.size() - 1]
+	_dot(Vector3(e.x, maxf(island.height_at(e.x, e.y), 0.0) + 0.07, e.y), 0.14, Color(1.0, 0.97, 0.85, 0.95))
+	_path_mesh.surface_end()
+
+
+func _dot(c: Vector3, r: float, col: Color) -> void:
+	var segs := 8
+	for s in segs:
+		var a0 := TAU * s / segs
+		var a1 := TAU * (s + 1) / segs
+		_path_mesh.surface_set_color(col)
+		_path_mesh.surface_add_vertex(c)
+		_path_mesh.surface_set_color(col)
+		_path_mesh.surface_add_vertex(c + Vector3(cos(a1), 0, sin(a1)) * r)
+		_path_mesh.surface_set_color(col)
+		_path_mesh.surface_add_vertex(c + Vector3(cos(a0), 0, sin(a0)) * r)
