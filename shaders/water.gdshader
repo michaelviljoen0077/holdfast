@@ -17,6 +17,7 @@ uniform vec3 foam_col : source_color = vec3(0.97, 0.99, 1.0);
 uniform float clarity = 1.1;
 uniform float refraction = 0.025;
 uniform float foam_width = 0.55;
+uniform float swell = 0.025;
 
 varying vec3 wpos;
 
@@ -24,8 +25,12 @@ void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	// Very gentle swell; kept small so the shoreline depth test stays stable.
 	float s = sin(wpos.x * 0.35 + TIME * 0.9) * cos(wpos.z * 0.29 + TIME * 0.7);
-	VERTEX.y += s * 0.025;
-	wpos.y += s * 0.025;
+	s += sin(wpos.x * 0.11 - wpos.z * 0.07 + TIME * 0.6) * 0.8;
+	// Calm near the island so the shoreline depth test stays stable.
+	float open_sea = smoothstep(18.0, 40.0, length(wpos.xz));
+	float amp = mix(min(swell, 0.03), swell, open_sea);
+	VERTEX.y += s * amp;
+	wpos.y += s * amp;
 }
 
 float scene_world_y(vec2 uv, mat4 inv_proj, mat4 inv_view) {

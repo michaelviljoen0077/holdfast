@@ -23,6 +23,7 @@ func _ready() -> void:
 	_banks["crumble"] = [_crumble()]
 	_banks["horn"] = [_horn()]
 	_banks["click"] = [_click(900.0)]
+	_banks["thunder"] = [_thunder()]
 	_banks["order"] = [_click(620.0)]
 	for i in 24:
 		var p := AudioStreamPlayer3D.new()
@@ -71,6 +72,12 @@ func play_ui(name: String, volume_db := -6.0) -> void:
 	add_child(p)
 	p.play()
 	p.finished.connect(p.queue_free)
+
+
+func start_rain() -> void:
+	if has_node("Rain"):
+		return
+	_start_loop(_rain(), -9.0, "Rain")
 
 
 func fire_loop() -> AudioStreamPlayer3D:
@@ -321,3 +328,32 @@ func _fire() -> AudioStreamWAV:
 				if i + j < b.size():
 					b[i + j] += _rng.randf_range(-1.0, 1.0) * amp * (1.0 - float(j) / len)
 	return _to_wav(_normalize(_make_loopable(b, 0.5), 0.7), true)
+
+
+func _thunder() -> AudioStreamWAV:
+	var b := _buf(4.5)
+	var lp := 0.0
+	var lp2 := 0.0
+	for i in b.size():
+		var t := float(i) / RATE
+		lp += (_rng.randf_range(-1.0, 1.0) - lp) * 0.03
+		lp2 += (lp - lp2) * 0.04
+		# A sharp crack, then rolling rumbles that fade.
+		var crack := _rng.randf_range(-1.0, 1.0) * exp(-t * 25.0) * 0.25
+		var roll := (0.6 + 0.4 * sin(t * 5.0) * sin(t * 1.7)) * exp(-t * 0.8)
+		b[i] = lp2 * 16.0 * roll * clampf(t / 0.05, 0.0, 1.0) + crack
+	return _to_wav(_normalize(b, 0.95))
+
+
+func _rain() -> AudioStreamWAV:
+	var b := _buf(6.5)
+	var hp := 0.0
+	var lp := 0.0
+	for i in b.size():
+		var n := _rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.45
+		hp = n - lp
+		b[i] = lp * 0.6 + hp * 0.25
+		if _rng.randf() < 0.002:
+			b[i] += _rng.randf_range(0.3, 0.8)
+	return _to_wav(_normalize(_make_loopable(b, 1.0), 0.6), true)

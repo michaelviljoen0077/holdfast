@@ -17,6 +17,7 @@ const Battle := preload("res://scripts/gameplay/battle.gd")
 const Director := preload("res://scripts/gameplay/raid_director.gd")
 const Commander := preload("res://scripts/gameplay/commander.gd")
 const Hud := preload("res://scripts/ui/hud.gd")
+const Atmosphere := preload("res://scripts/world/atmosphere.gd")
 
 static var island_seed := 7
 static var attract := false     # title-screen backdrop: no HUD, self-playing
@@ -33,6 +34,9 @@ var detail_tex: ImageTexture
 var prop_mat: ShaderMaterial
 var foliage_mat: ShaderMaterial
 var terrain_mat: ShaderMaterial
+var water_mat: ShaderMaterial
+var grass_mat: ShaderMaterial
+var atmosphere
 var paths
 var nav
 var carver
@@ -71,6 +75,8 @@ func _ready() -> void:
 	noise_tex = Tex.noise(island_seed + 1, 512, 0.012, 5)
 	detail_tex = Tex.noise(island_seed + 2, 256, 0.05, 3)
 	_build_materials()
+	atmosphere = Atmosphere.new(Atmosphere.pick(island_seed))
+	add_child(atmosphere)
 	_build_environment()
 	_build_terrain()
 	_build_water()
@@ -85,8 +91,16 @@ func _ready() -> void:
 	add_child(veg)
 	scatter.build_trees(veg, foliage_mat)
 	scatter.build_rocks(veg, prop_mat)
-	scatter.build_grass(veg, _grass_material(), foliage_mat)
+	grass_mat = _grass_material()
+	scatter.build_grass(veg, grass_mat, foliage_mat)
+	atmosphere.configure_materials(terrain_mat, water_mat, grass_mat, foliage_mat)
+	var doors := []
+	for h in house_records:
+		doors.append(h["door"])
+	if tower:
+		atmosphere.add_lanterns(self, doors, island, tower.position + Vector3(0, tower.block_h * tower.rings, 0))
 	_build_camera()
+	atmosphere.start_weather(rig)
 	_build_battle()
 	print("island %d built in %d ms, houses=%d spots=%d" % [island_seed, Time.get_ticks_msec() - t0, house_records.size(), defender_spots.size()])
 	if Capture.has("pick"):
@@ -201,6 +215,7 @@ func _build_environment() -> void:
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
+	# Sun is created below; atmosphere fills in the per-island look afterwards.
 
 	sun = DirectionalLight3D.new()
 	sun.rotation = Vector3(deg_to_rad(-38.0), deg_to_rad(-62.0), 0.0)
@@ -214,6 +229,7 @@ func _build_environment() -> void:
 	sun.shadow_bias = 0.03
 	sun.shadow_normal_bias = 1.2
 	add_child(sun)
+	atmosphere.configure_environment(env, sky_mat, sun)
 
 
 func _build_terrain() -> void:
@@ -251,6 +267,7 @@ func _build_water() -> void:
 	m.set_shader_parameter("normal_b", Tex.normal_map(island_seed + 6, 256, 0.025, 4.0))
 	m.set_shader_parameter("foam_noise", detail_tex)
 	mi.material_override = m
+	water_mat = m
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 	# Seabed beyond the generated field so deep water never shows a seam.
