@@ -280,6 +280,8 @@ func _physics_process(dt: float) -> void:
 
 
 var _step_t := {}
+var structures: Array = []
+signal structure_destroyed(structure)
 var stats := {"slain": 0, "lost": 0}
 
 
@@ -341,6 +343,7 @@ func _update_squad(s: Squad, dt: float) -> void:
 		pass
 	elif not (s.order == Squad.Order.ATTACK_MOVE and engaged):
 		var base := s.speed
+		s.speed = base * s.formation_speed()
 		if s.charging():
 			s.speed = base * 1.9
 		s.advance(dt, nav)
@@ -392,9 +395,29 @@ func _update_unit(u: Unit, dt: float) -> void:
 			if t != null and t.pos.distance_to(u.slot) <= s.leash:
 				u.target = t
 
+	# Sieging squads hack at their structure whenever no enemy is close.
+	var siege = s.siege
+	if siege != null and (siege.dead or not is_instance_valid(siege)):
+		s.siege = null
+		siege = null
+	if siege != null and u.target != null and u.attack_range <= 0.0 and u.target.pos.distance_to(u.pos) > 1.6:
+		u.target = null
+
 	# Desired position.
 	var goal := u.slot
 	var fighting := false
+	if siege != null and u.target == null and u.attack_range <= 0.0 and not s.charging() and s.order != Squad.Order.MOVE:
+		goal = siege.nearest_point(u.pos, 0.28)
+		if siege.distance_to(u.pos) <= u.reach + 0.12:
+			goal = u.pos
+			fighting = true
+			if u.swing_t < 0.0 and u.attack_t <= 0.0:
+				u.swing_t = 0.0
+				u.swing_target = siege
+				u.attack_t = u.cooldown * randf_range(0.85, 1.2)
+				u.on_swing()
+				var c := siege.centre() as Vector2
+				u.facing = atan2(c.x - u.pos.x, c.y - u.pos.y)
 	if s.braced():
 		u.target = _nearest_enemy(u.pos, u.team, u.reach * 1.1)
 		goal = u.pos
@@ -447,8 +470,13 @@ func _update_unit(u: Unit, dt: float) -> void:
 	u.vel = u.vel.lerp(want, clampf(dt * 9.0, 0.0, 1.0))
 	var step := (u.vel + u.knock) * dt
 	u.knock = u.knock.lerp(Vector2.ZERO, clampf(dt * 7.0, 0.0, 1.0))
-	_move(u, step)
-	u.y = maxf(island.height_at(u.pos.x, u.pos.y), -0.42)
+	if u.perched:
+		u.vel = Vector2.ZERO
+		u.knock = Vector2.ZERO
+		u.y = u.perch_y
+	else:
+		_move(u, step)
+		u.y = maxf(island.height_at(u.pos.x, u.pos.y), -0.42)
 
 	# Facing.
 	var face_dir := Vector2.ZERO
@@ -459,7 +487,10 @@ func _update_unit(u: Unit, dt: float) -> void:
 	if face_dir.length() > 0.01:
 		u.facing = lerp_angle(u.facing, atan2(face_dir.x, face_dir.y), clampf(dt * 10.0, 0.0, 1.0))
 	elif u.vel.length() < 0.1:
-		u.facing = lerp_angle(u.facing, s.facing, clampf(dt * 3.0, 0.0, 1.0))
+		var rest_face := s.facing
+		if s.formation == "ring" and u.pos.distance_to(s.anchor) > 0.15:
+			rest_face = atan2(u.pos.x - s.anchor.x, u.pos.y - s.anchor.y)
+		u.facing = lerp_angle(u.facing, rest_face, clampf(dt * 3.0, 0.0, 1.0))
 
 
 func _move(u: Unit, step: Vector2) -> void:
@@ -498,6 +529,9 @@ func _separation(u: Unit) -> Vector2:
 
 func _resolve_attack(u: Unit) -> void:
 	var t = u.swing_target
+	if t != null and t.has_method("take_damage"):
+		_hit_structure(u, t)
+		return
 	if t == null or not t.alive():
 		return
 	if u.attack_range > 0.0:
@@ -510,6 +544,8 @@ func _resolve_attack(u: Unit) -> void:
 	# Defenders with shields block some blows, especially from the front.
 	var block_chance := 0.0
 	var frontal := Vector2(sin(t.facing), cos(t.facing)).dot((u.pos - t.pos).normalized()) > 0.3
+	if t.squad != null and t.squad.formation == "ring":
+		frontal = true
 	match t.kind:
 		"shield":
 			block_chance = 0.6 if frontal else 0.15
@@ -716,9 +752,14 @@ func _update_houses(dt: float) -> void:
 
 
 func _make_fire(h: Dictionary) -> Node3D:
-	var root := Node3D.new()
 	var node: MeshInstance3D = h["node"]
-	root.position = node.position + Vector3(0, 1.2, 0)
+	return _fire_root(node.position + Vector3(0, 1.2, 0), 1.0)
+
+
+func _fire_root(at: Vector3, scale: float) -> Node3D:
+	var root := Node3D.new()
+	root.position = at
+	root.scale = Vector3.ONE * scale
 	add_child(root)
 	var flames := GPUParticles3D.new()
 	flames.amount = 70
@@ -1065,7 +1106,7 @@ func _trample(u: Unit) -> void:
 		if o.pos.distance_to(u.pos) > 0.55:
 			continue
 		u.charge_hits[o] = true
-		o.take_hit(1.0, u.pos)
+		o.take_hit(2.0 if u.squad.formation == "wedge" else 1.0, u.pos)
 		impact.emit(0.35, Vector3(o.pos.x, o.y, o.pos.y))
 		o.knock += (o.pos - u.pos).normalized() * 3.0
 		_puff(Vector3(o.pos.x, o.y + 0.2, o.pos.y), 3, Color(0.85, 0.8, 0.7, 0.8))
@@ -1197,3 +1238,56 @@ func _ring_tex() -> ImageTexture:
 	img.generate_mipmaps()
 	_ring_cache = ImageTexture.create_from_image(img)
 	return _ring_cache
+
+
+# Structures -----------------------------------------------------------------
+
+func add_structure(st) -> void:
+	st.battle = self
+	add_child(st)
+	structures.append(st)
+	st.destroyed.connect(func(x):
+		structures.erase(x)
+		structure_destroyed.emit(x))
+
+
+func _hit_structure(u: Unit, st) -> void:
+	if st.dead or st.distance_to(u.pos) > u.reach + 0.4:
+		return
+	var mult := 1.0
+	match u.kind:
+		"berserker", "chieftain", "sword":
+			mult = 2.0
+		"jarl", "champion":
+			mult = 3.0
+	st.take_damage(u.damage * mult, u.pos)
+	var c: Vector2 = st.nearest_point(u.pos, 0.0)
+	_puff(Vector3(c.x, island.height_at(c.x, c.y) + 0.5, c.y), 2, Color(0.6, 0.48, 0.34, 0.8))
+	# Player soldiers carry torches to enemy timber.
+	if u.team == PLAYER and st.flammable and st.team != PLAYER:
+		st.ignite()
+
+
+## Generic fire effect for structures (flames, smoke, light, crackle).
+func attach_fire(parent: Node3D, at: Vector3, scale: float) -> void:
+	var root := _fire_root(at, scale)
+	root.reparent(parent)
+
+
+func dust(at: Vector3, count: int) -> void:
+	_puff(at, count, Color(0.72, 0.66, 0.56, 0.85))
+
+
+func fling_from_perch(u: Unit, away: Vector3) -> void:
+	u.perched = false
+	u.knock += Vector2(away.x, away.z) * 4.0
+	u.take_hit(2.0, u.pos - Vector2(away.x, away.z))
+
+
+func structure_at_collider(collider: Object):
+	var n := collider as Node
+	while n != null:
+		if n.has_method("take_damage") and structures.has(n):
+			return n
+		n = n.get_parent()
+	return null

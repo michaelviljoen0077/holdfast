@@ -3,6 +3,7 @@ extends Node3D
 ## raiders into the shallows and steers raider squads toward the village.
 
 const Squad := preload("res://scripts/gameplay/squad.gd")
+const BeachedBoat := preload("res://scripts/gameplay/beached_boat.gd")
 const Tex := preload("res://scripts/core/tex.gd")
 
 signal wave_started(index: int, total: int, boats: int)
@@ -268,12 +269,26 @@ func _update_boat(b: Dictionary, dt: float) -> void:
 				else:
 					b["state"] = "beached"
 					squad.anchor = b["wade"]
+					var dir: Vector2 = ((b["wade"] as Vector2) - (b["to"] as Vector2)).normalized()
+					var st := BeachedBoat.new()
+					battle.add_structure(st)
+					st.setup(nav, island, node, b["to"] + dir * 2.2, b["to"] - dir * 2.2)
+					b["structure"] = st
 		"beached":
 			b["wait"] += dt
-			# Shove off once the crew is ashore and fighting.
-			if b["wait"] > 6.0:
+			var st = b.get("structure")
+			if st != null and st.dead:
+				b["state"] = "sunk"
+			# The boat waits a while, then rows home: burn it before it escapes.
+			elif b["wait"] > 24.0 and (st == null or not st.burning):
 				b["state"] = "leave"
 				b["t"] = 0.0
+				if st != null:
+					battle.structures.erase(st)
+					st.queue_free()
+					b["structure"] = null
+		"sunk":
+			return
 		"leave":
 			b["t"] += dt / 14.0
 			var to: Vector2 = b["to"]
@@ -319,6 +334,18 @@ func _think() -> void:
 			dest = battle._centroid(prey)
 		if squad.order == Squad.Order.HOLD and centre.distance_to(dest) < 1.6:
 			continue
+		# Walls in the way: hack through the one barring the road, unless the
+		# detour around it is short.
+		if squad.siege != null and not squad.siege.dead:
+			continue
+		var wall = _blocking_wall(squad, centre, dest)
+		if wall != null:
+			var near: Vector2 = wall.nearest_point(centre, 0.6)
+			var wp: PackedVector2Array = nav.find_path(squad.anchor, near)
+			if not wp.is_empty():
+				squad.siege = wall
+				squad.set_path(wp, true)
+				continue
 		if squad.path.is_empty() or squad.destination().distance_to(dest) > 1.5 or squad.order == Squad.Order.HOLD:
 			var p: PackedVector2Array = nav.find_path(squad.anchor, dest)
 			if not p.is_empty():
@@ -365,7 +392,7 @@ func _check_end() -> void:
 	# Burnt houses cost you the island's reward; only losing the army loses the battle.
 	if player_alive == 0:
 		finished = true
-		print("RESULT defeat houses=%d player_alive=%d wave=%d" % [battle.intact_houses().size(), player_alive, wave_i])
+		print("RESULT defeat houses=%d player_alive=%d wave=%d boats_burned=%d" % [battle.intact_houses().size(), player_alive, wave_i, battle.stats.get("boats", 0)])
 		defeat.emit()
 		return
 	if wave_i >= waves.size() and raiders_alive() == 0:
@@ -375,7 +402,7 @@ func _check_end() -> void:
 				any_sailing = true
 		if not any_sailing:
 			finished = true
-			print("RESULT victory houses=%d player_alive=%d wave=%d" % [battle.intact_houses().size(), player_alive, wave_i])
+			print("RESULT victory houses=%d player_alive=%d wave=%d boats_burned=%d" % [battle.intact_houses().size(), player_alive, wave_i, battle.stats.get("boats", 0)])
 			victory.emit()
 
 
@@ -405,3 +432,35 @@ func _check_cleared() -> void:
 			return
 	_cleared_wave = wave_i
 	wave_cleared.emit(wave_i)
+
+
+func _path_len(p: PackedVector2Array) -> float:
+	var l := 0.0
+	for i in range(1, p.size()):
+		l += p[i - 1].distance_to(p[i])
+	return l
+
+
+## The player palisade a raider squad should break through, if any.
+func _blocking_wall(squad, from: Vector2, to: Vector2):
+	if squad.kind == "draugr_archer":
+		return null
+	var walls: Array = battle.structures.filter(func(s): return s.team == battle.PLAYER and not s.dead)
+	if walls.is_empty():
+		return null
+	var path: PackedVector2Array = nav.find_path(squad.anchor, to)
+	var direct := from.distance_to(to)
+	if not path.is_empty() and _path_len(path) < direct * 1.5 + 6.0:
+		return null
+	# The wall closest to the straight line toward the goal.
+	var best = null
+	var best_d := 6.0
+	for w in walls:
+		var c: Vector2 = w.centre()
+		var ab := to - from
+		var t := clampf((c - from).dot(ab) / maxf(ab.length_squared(), 0.001), 0.0, 1.0)
+		var d := (from + ab * t).distance_to(c)
+		if d < best_d:
+			best_d = d
+			best = w
+	return best

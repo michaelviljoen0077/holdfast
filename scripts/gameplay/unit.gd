@@ -60,7 +60,9 @@ var body: MeshInstance3D
 var rig                        # UnitRig, when the visual is an animated character
 var can_rise := false          # draugr reassemble once after being cut down
 var heavy := false
-var counted := false           # death already tallied in battle stats             # barely moved by knockback (bosses, champions)
+var counted := false
+var perched := false           # standing on a watchtower platform
+var perch_y := 0.0           # death already tallied in battle stats             # barely moved by knockback (bosses, champions)
 var special_t := 0.0           # boss: seconds until the next slam
 var summon_t := 0.0            # boss: seconds until the next summoning
 var risen := false

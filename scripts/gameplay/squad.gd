@@ -26,6 +26,26 @@ var refit_t := 0.0             # time spent resting at a house door
 var refit_cooldown := 0.0
 var visual                     # spawn spec, reused when replenishing
 var level := 1
+var siege                      # structure this squad is ordered to tear down
+var formation := "block"       # block | line | wedge | ring
+var end_facing := INF          # facing to adopt on arrival (set by right-drag)
+
+const FORMATIONS := ["block", "line", "wedge", "ring"]
+const FORMATION_NAMES := {"block": "Block", "line": "Line", "wedge": "Wedge", "ring": "Ring"}
+
+
+func cycle_formation() -> void:
+	formation = FORMATIONS[(FORMATIONS.find(formation) + 1) % FORMATIONS.size()]
+
+
+## Speed multiplier from formation: a ring shuffles, a wedge drives.
+func formation_speed() -> float:
+	match formation:
+		"ring":
+			return 0.6
+		"wedge":
+			return 1.1
+	return 1.0
 var ability := ""              # brace | charge | volley
 var ability_cd := 0.0          # seconds until usable again
 var ability_t := 0.0           # seconds the effect remains active
@@ -110,6 +130,9 @@ func advance(dt: float, nav) -> bool:
 			step = 0.0
 	if path_i >= path.size():
 		order = Order.HOLD
+		if end_facing != INF:
+			facing = end_facing
+			end_facing = INF
 		return true
 	return false
 
@@ -122,20 +145,11 @@ func assign_slots(nav, reassign := false) -> void:
 	var count := alive.size()
 	if count == 0:
 		return
-	var c := mini(cols, count)
-	var rows := int(ceil(float(count) / c))
 	var basis_x := Vector2(cos(facing), -sin(facing))   # local +x (right)
 	var basis_z := Vector2(sin(facing), cos(facing))    # local +z (forward)
-	# Slot order: nearest unit takes nearest slot so nobody crosses the block.
 	var offsets: Array[Vector2] = []
-	for i in count:
-		var r := i / c
-		var col := i % c
-		var in_row := mini(c, count - r * c)
-		var x := (col - (in_row - 1) * 0.5) * spacing
-		var z := ((rows - 1) * 0.5 - r) * spacing
-		var stagger := 0.08 * (1 if (r + col) % 2 == 0 else -1)
-		offsets.append(basis_x * (x + stagger) + basis_z * z)
+	for o in formation_offsets(count):
+		offsets.append(basis_x * o.x + basis_z * o.y)
 	var need := reassign
 	for u in alive:
 		if u.slot_i < 0 or u.slot_i >= count:
@@ -161,3 +175,46 @@ func assign_slots(nav, reassign := false) -> void:
 		if not nav.clear_line(anchor, s):
 			s = anchor
 		u.slot = s
+
+
+## Local offsets (x right, y forward) for each formation.
+func formation_offsets(count: int) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	match formation:
+		"line":
+			# Two ranks, wide front: more blades engage at once, flanks are thin.
+			var per := int(ceil(count / 2.0))
+			for i in count:
+				var r := i / per
+				var col := i % per
+				var in_row := mini(per, count - r * per)
+				out.append(Vector2((col - (in_row - 1) * 0.5) * spacing * 1.05, (0.5 - r) * spacing))
+		"wedge":
+			# Arrowhead with the point forward.
+			var row := 0
+			var placed := 0
+			while placed < count:
+				var in_row := mini(row * 2 + 1, count - placed)
+				for k in in_row:
+					out.append(Vector2((k - (in_row - 1) * 0.5) * spacing, -row * spacing * 0.9 + spacing))
+				placed += in_row
+				row += 1
+		"ring":
+			# Shields outward; one in the middle when there are enough.
+			var outer := count if count < 7 else count - 1
+			var radius := maxf(spacing * outer / TAU * 1.15, spacing)
+			for i in outer:
+				var a := TAU * i / outer
+				out.append(Vector2(sin(a), cos(a)) * radius)
+			if outer < count:
+				out.append(Vector2.ZERO)
+		_:
+			var c := mini(cols, count)
+			var rows := int(ceil(float(count) / c))
+			for i in count:
+				var r := i / c
+				var col := i % c
+				var in_row := mini(c, count - r * c)
+				var stagger := 0.08 * (1 if (r + col) % 2 == 0 else -1)
+				out.append(Vector2((col - (in_row - 1) * 0.5) * spacing + stagger, ((rows - 1) * 0.5 - r) * spacing))
+	return out

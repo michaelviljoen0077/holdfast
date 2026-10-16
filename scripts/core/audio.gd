@@ -35,6 +35,7 @@ func _ready() -> void:
 	_load_bank("arrow_ground", ["impactWood_light_000", "impactWood_light_001", "impactWood_light_002"])
 	_load_bank("step", ["footstep_grass_000", "footstep_grass_001", "footstep_grass_002", "footstep_grass_003", "footstep_grass_004"])
 	_load_bank("coins", ["handleCoins", "handleCoins2"])
+	_load_bank("wood_hit", ["impactPlank_medium_000", "impactPlank_medium_001", "impactPlank_medium_002", "impactPlank_medium_003", "impactPlank_medium_004"])
 	_load_bank("select", ["cloth1", "cloth2"])
 	_load_bank("victory", ["sting_victory"])
 	_load_bank("defeat", ["sting_defeat"])

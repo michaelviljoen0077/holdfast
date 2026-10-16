@@ -20,6 +20,7 @@ var _end_detail: Label
 var _banner_t := 0.0
 var _hint: Label
 var _boss_box: VBoxContainer
+var _build_btn: Button
 var _boss_bar: ProgressBar
 
 const INK := Color(0.96, 0.93, 0.86)
@@ -82,6 +83,21 @@ func setup(p_battle, p_director, p_commander) -> void:
 	_ability.focus_mode = Control.FOCUS_NONE
 	_ability.pressed.connect(func(): topple_pressed.emit())
 	root.add_child(_ability)
+	_build_btn = Button.new()
+	_build_btn.add_theme_font_size_override("font_size", 18)
+	_build_btn.add_theme_stylebox_override("normal", _box(Color(0.22, 0.16, 0.1, 0.85), Color(0.7, 0.55, 0.35), 2))
+	_build_btn.add_theme_stylebox_override("hover", _box(Color(0.32, 0.22, 0.12, 0.92), Color(1.0, 0.8, 0.45), 2))
+	_build_btn.add_theme_stylebox_override("pressed", _box(Color(0.45, 0.3, 0.12, 0.95), Color(1.0, 0.85, 0.5), 2))
+	_build_btn.add_theme_color_override("font_color", INK)
+	_build_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_build_btn.position = Vector2(-320, -146)
+	_build_btn.custom_minimum_size = Vector2(290, 50)
+	_build_btn.focus_mode = Control.FOCUS_NONE
+	_build_btn.pressed.connect(func():
+		if commander.builder:
+			commander.select(null)
+			commander.builder.toggle())
+	root.add_child(_build_btn)
 
 	_boss_box = VBoxContainer.new()
 	_boss_box.set_anchors_preset(Control.PRESET_CENTER_TOP)
@@ -104,7 +120,7 @@ func setup(p_battle, p_director, p_commander) -> void:
 	root.add_child(_boss_box)
 
 	_hint = _label(15, INK.darkened(0.25))
-	_hint.text = "LMB select  •  RMB move  •  F squad ability  •  Rest at a house to refit  •  T topple tower  •  WASD / Q E / wheel"
+	_hint.text = "LMB select  •  RMB move (drag to face)  •  F ability  •  G formation  •  B build  •  T topple  •  RMB enemy timber to burn it"
 	_hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hint.position = Vector2(24, -36)
 	root.add_child(_hint)
@@ -299,6 +315,7 @@ func _refresh_cards() -> void:
 			else:
 				abil.text = "%s  ready  [F]" % info["name"]
 				bar.value = 1.0
+			abil.text += "    ·    %s [G]" % s.FORMATION_NAMES[s.formation]
 			if commander.ability_armed and sel:
 				abil.text = "Click to target %s" % info["name"]
 
@@ -366,10 +383,13 @@ func _process(dt: float) -> void:
 		lines += "\nNext wave in   %d s" % int(ceil(next))
 	_status.text = lines
 	_ability.disabled = battle.tower == null or battle.tower.collapsed
+	if commander.builder:
+		var bld = commander.builder
+		_build_btn.text = ("  Placing palisade  ·  %d timber left  " if bld.active else "  Build palisade [B]  ·  %d timber  ") % int(bld.timber)
 	if commander.selected != null or commander.topple_armed or commander.ability_armed:
-		_hint.text = "Tactical pause  •  RMB move  •  F ability  •  Esc cancel"
+		_hint.text = "Tactical pause  •  RMB move, drag to set facing  •  RMB a boat or wall to attack it  •  F ability  •  G formation  •  Esc cancel"
 	else:
-		_hint.text = "LMB select  •  RMB move  •  F squad ability  •  Rest at a house to refit  •  T topple tower  •  WASD / Q E / wheel"
+		_hint.text = "LMB select  •  RMB move (drag to face)  •  F ability  •  G formation  •  B build  •  T topple  •  RMB enemy timber to burn it"
 
 
 func _stat_line() -> String:

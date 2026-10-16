@@ -6,6 +6,7 @@ const Squad := preload("res://scripts/gameplay/squad.gd")
 
 signal selection_changed(squad)
 signal ability_state(armed: bool)
+signal formation_changed(squad)
 
 var battle
 var nav
@@ -15,6 +16,11 @@ var selected = null
 var hovered = null
 var topple_armed := false
 var ability_armed := false      # selected squad's targeted ability awaits a click
+var builder                     # palisade build mode (optional)
+var _rmb_down := Vector3.INF    # ground point where a right-drag order began
+var _rmb_screen := Vector2.ZERO
+var _rmb_target = null          # enemy structure under the cursor at press
+var _drag_face := INF
 
 var _ring: Decal
 var _hover_ring: Decal
@@ -123,9 +129,24 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion:
 		_mouse = event.position
+		if builder and builder.active:
+			builder.hover(_ground_at(_mouse))
+		if _rmb_down != Vector3.INF and _mouse.distance_to(_rmb_screen) > 24.0:
+			var g := _ground_at(_mouse)
+			if g != Vector3.INF:
+				_drag_face = atan2(g.x - _rmb_down.x, g.z - _rmb_down.z)
+	elif event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_RIGHT and _rmb_down != Vector3.INF:
+		_finish_order()
+		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT:
+		if builder and builder.active and mb.button_index == MOUSE_BUTTON_LEFT:
+			builder.click(_ground_at(mb.position))
+			get_viewport().set_input_as_handled()
+		elif builder and builder.active and mb.button_index == MOUSE_BUTTON_RIGHT:
+			builder.set_active(false)
+			get_viewport().set_input_as_handled()
+		elif mb.button_index == MOUSE_BUTTON_LEFT:
 			if ability_armed and selected != null:
 				var g0 := _ground_at(mb.position)
 				if g0 != Vector3.INF:
@@ -146,7 +167,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				select(_pick_squad(mb.position))
 			get_viewport().set_input_as_handled()
 		elif mb.button_index == MOUSE_BUTTON_RIGHT and selected != null:
-			_order_move(mb.position)
+			# Press marks the destination; dragging sets the facing; release orders.
+			_rmb_down = _ground_at(mb.position)
+			_rmb_screen = mb.position
+			_rmb_target = _structure_at(mb.position)
+			_drag_face = INF
 			get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		var k: int = event.physical_keycode
@@ -157,10 +182,21 @@ func _unhandled_input(event: InputEvent) -> void:
 				select(mine[i])
 		elif k == KEY_T:
 			arm_topple()
+		elif k == KEY_B and builder:
+			select(null)
+			builder.toggle()
+		elif k == KEY_G and selected != null:
+			selected.cycle_formation()
+			selected.assign_slots(nav, true)
+			Sfx.play_ui("select", -8.0)
+			formation_changed.emit(selected)
 		elif k == KEY_F or k == KEY_SPACE:
 			trigger_ability()
 		elif k == KEY_ESCAPE:
-			if selected != null or topple_armed or ability_armed:
+			if builder and builder.active:
+				builder.set_active(false)
+				get_viewport().set_input_as_handled()
+			elif selected != null or topple_armed or ability_armed:
 				select(null)
 				topple_armed = false
 				ability_state.emit(false)
@@ -286,6 +322,8 @@ func _process(dt: float) -> void:
 	elif selected == null:
 		_preview = PackedVector2Array()
 	_draw_path()
+	if _drag_face != INF and _rmb_down != Vector3.INF:
+		_draw_facing(_rmb_down, _drag_face)
 
 
 ## Dotted path from the selected squad to the cursor, hugging the terrain.
@@ -339,3 +377,78 @@ func impact(strength: float, _at: Vector3) -> void:
 
 func dramatic(seconds: float) -> void:
 	_dramatic = seconds
+
+
+func _structure_at(screen: Vector2):
+	var cam: Camera3D = rig.camera
+	var from := cam.project_ray_origin(screen)
+	var q := PhysicsRayQueryParameters3D.create(from, from + cam.project_ray_normal(screen) * 600.0)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return null
+	var st = battle.structure_at_collider(hit["collider"])
+	if st != null and st.team != battle.PLAYER:
+		return st
+	return null
+
+
+func _finish_order() -> void:
+	var s = selected
+	var dest := _rmb_down
+	var target = _rmb_target
+	var face := _drag_face
+	_rmb_down = Vector3.INF
+	_rmb_target = null
+	_drag_face = INF
+	if s == null:
+		return
+	if target != null and not target.dead:
+		order_siege(s, target)
+		select(null)
+		return
+	if dest == Vector3.INF:
+		return
+	var path: PackedVector2Array = nav.find_path(s.anchor, Vector2(dest.x, dest.z))
+	if path.is_empty():
+		_flash_dest(dest, Color(1.0, 0.35, 0.3))
+		return
+	s.siege = null
+	s.set_path(path, false)
+	s.end_facing = face
+	Sfx.play_ui("order", -9.0)
+	var end := path[path.size() - 1]
+	_flash_dest(Vector3(end.x, island.height_at(end.x, end.y), end.y), Color(0.95, 0.92, 0.75))
+	select(null)
+
+
+func order_siege(s, st) -> void:
+	var near: Vector2 = st.nearest_point(s.anchor, 0.7)
+	var path: PackedVector2Array = nav.find_path(s.anchor, near)
+	if path.is_empty():
+		_flash_dest(Vector3(near.x, 0.0, near.y), Color(1.0, 0.35, 0.3))
+		return
+	s.siege = st
+	s.set_path(path, true)
+	s.end_facing = INF
+	Sfx.play_ui("order", -6.0)
+	_flash_dest(Vector3(near.x, island.height_at(near.x, near.y), near.y), Color(1.0, 0.55, 0.25))
+
+
+func _draw_facing(at: Vector3, face: float) -> void:
+	if _path_mesh.get_surface_count() == 0:
+		_path_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	else:
+		_path_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	var dir := Vector3(sin(face), 0, cos(face))
+	var side := Vector3(dir.z, 0, -dir.x)
+	var col := Color(1.0, 0.85, 0.45, 0.9)
+	for k in 6:
+		var p := at + dir * (0.25 + k * 0.28)
+		p.y = maxf(island.height_at(p.x, p.z), 0.0) + 0.07
+		_dot(p, 0.06, col)
+	var tip := at + dir * 2.1
+	tip.y = maxf(island.height_at(tip.x, tip.z), 0.0) + 0.08
+	for v in [tip, tip - dir * 0.45 + side * 0.3, tip - dir * 0.45 - side * 0.3]:
+		_path_mesh.surface_set_color(col)
+		_path_mesh.surface_add_vertex(v)
+	_path_mesh.surface_end()

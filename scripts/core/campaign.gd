@@ -16,6 +16,13 @@ const COST_UNLOCK := 25
 const COST_TRAIN := [0, 30, 50]      # cost to reach level 2, 3
 const COST_RECRUIT := 45
 const MAX_SQUADS := 4
+const BASE_TIMBER := 10.0
+const BOAT_BOUNTY := 8
+var timber_bonus := 0.0
+
+
+func timber() -> float:
+	return BASE_TIMBER + timber_bonus
 
 var active := false
 var gold := 0
@@ -167,7 +174,8 @@ func waves_for(node: Dictionary) -> Array:
 # Results ---------------------------------------------------------------------
 
 ## Called when a battle ends. `survivors` maps roster id -> living unit count.
-func finish_island(won: bool, saved: int, total: int, survivors: Dictionary, slain := 0, lost := 0) -> void:
+func finish_island(won: bool, saved: int, total: int, survivors: Dictionary, slain := 0, lost := 0, boats := 0) -> void:
+	gold += boats * BOAT_BOUNTY
 	totals["islands"] += 1 if won else 0
 	totals["slain"] += slain
 	totals["lost"] += lost

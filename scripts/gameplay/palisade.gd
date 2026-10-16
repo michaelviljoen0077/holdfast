@@ -3,11 +3,11 @@ extends "res://scripts/gameplay/structure.gd"
 ## own frozen rigid body, so hacking the wall loosens individual stakes and
 ## breaking it sends the logs tumbling.
 
-const STAKE_GAP := 0.2
-const HEIGHT := 0.95
+const STAKE_GAP := 0.16
+const HEIGHT := 1.05
 
 static var _stake_mesh: ArrayMesh
-static var _rail_mesh: ArrayMesh
+static var _rail_mesh: Mesh
 static var _wood: StandardMaterial3D
 
 var stakes: Array[RigidBody3D] = []
@@ -20,7 +20,7 @@ func build(p_nav, p_island, p_a: Vector2, p_b: Vector2, p_team := 0) -> void:
 	label = "Palisade"
 	flammable = true
 	var length := p_a.distance_to(p_b)
-	max_hp = 18.0 + length * 8.0
+	max_hp = 30.0 + length * 14.0
 	hp = max_hp
 	setup_footprint(p_nav, p_island, p_a, p_b, 0.34)
 	_ensure_meshes()
@@ -28,7 +28,7 @@ func build(p_nav, p_island, p_a: Vector2, p_b: Vector2, p_team := 0) -> void:
 	var yaw := atan2(dir.x, dir.y)
 	var count := maxi(2, int(length / STAKE_GAP) + 1)
 	var shape := CylinderShape3D.new()
-	shape.radius = 0.075
+	shape.radius = 0.085
 	shape.height = HEIGHT
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(p_a.x * 1000.0 + p_b.y * 77.0)
@@ -74,7 +74,7 @@ static func _ensure_meshes() -> void:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_smooth_group(-1)
 	var sides := 6
-	var r := 0.07
+	var r := 0.085
 	for s in sides:
 		var a0 := TAU * s / sides
 		var a1 := TAU * (s + 1) / sides
@@ -144,7 +144,7 @@ func _break_apart(from: Vector2) -> void:
 			if is_instance_valid(s):
 				s.freeze = true
 				var t2 := create_tween()
-				t2.tween_property(s, "position:y", s.position.y - 0.6, 2.0)))
+				t2.tween_property(s, "position:y", s.position.y - 0.6, 2.0))
 
 
 func _on_ignite() -> void:

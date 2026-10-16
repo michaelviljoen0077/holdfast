@@ -505,6 +505,23 @@ func _build_battle() -> void:
 	commander.name = "Commander"
 	add_child(commander)
 	commander.setup(battle, nav, island, rig)
+	var builder := preload("res://scripts/gameplay/builder.gd").new()
+	add_child(builder)
+	builder.setup(battle, nav, island, rig, Campaign.timber() if Campaign.active else 14.0)
+	commander.builder = builder
+	if Capture.has("testwalls") and tower:
+		# Test rig: ring the village with palisades so raiders must break in.
+		var c := Vector2(tower.position.x, tower.position.z)
+		var segs := 14
+		for i in segs:
+			var a0 := TAU * i / segs
+			var a1 := TAU * (i + 1) / segs
+			var p0 := c + Vector2(cos(a0), sin(a0)) * float(Capture.arg("wallr", "5.5"))
+			var p1 := c + Vector2(cos(a1), sin(a1)) * float(Capture.arg("wallr", "5.5"))
+			if true:
+				var w := preload("res://scripts/gameplay/palisade.gd").new()
+				battle.add_structure(w)
+				w.build(nav, island, p0, p1, Battle.PLAYER)
 	battle.impact.connect(commander.impact)
 	director.wave_cleared.connect(func(_i):
 		commander.dramatic(1.4)
@@ -568,6 +585,13 @@ func _autoplay(dt: float) -> void:
 				continue
 			if home != null:
 				continue
+		if s.kind == "sword" and s.siege == null:
+			for st in battle.structures:
+				if st.label == "Longboat" and not st.dead and not st.burning and c.distance_to(st.centre()) < 18.0:
+					commander.order_siege(s, st)
+					break
+			if s.siege != null:
+				continue
 		# A burning house takes priority over chasing.
 		var burning = null
 		for h in battle.intact_houses():
@@ -606,7 +630,7 @@ func _continue_campaign() -> void:
 		if s.team == Battle.PLAYER and s.has_meta("roster_id"):
 			survivors[s.get_meta("roster_id")] = s.alive_count()
 	var won: bool = director.raiders_alive() == 0 and survivors.values().any(func(v): return v > 0)
-	Campaign.finish_island(won, battle.intact_houses().size(), battle.houses.size(), survivors, battle.stats["slain"], battle.stats["lost"])
+	Campaign.finish_island(won, battle.intact_houses().size(), battle.houses.size(), survivors, battle.stats["slain"], battle.stats["lost"], battle.stats.get("boats", 0))
 	Engine.time_scale = 1.0
 	Fader.go("res://scenes/camp.tscn")
 

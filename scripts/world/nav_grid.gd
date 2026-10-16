@@ -15,6 +15,7 @@ var n := int(EXTENT * 2.0 / CELL)
 var heights := PackedFloat32Array()
 var walkable := PackedByteArray()
 var component := PackedInt32Array()
+var blocked := PackedByteArray()      # cells covered by standing structures
 var astar := AStar2D.new()
 var island
 
@@ -31,6 +32,9 @@ func rebuild() -> void:
 	heights.resize(n * n)
 	walkable.resize(n * n)
 	component.resize(n * n)
+	if blocked.size() != n * n:
+		blocked.resize(n * n)
+		blocked.fill(0)
 	for j in n:
 		for i in n:
 			var p := cell_centre(i, j)
@@ -58,7 +62,44 @@ func in_bounds(c: Vector2i) -> bool:
 
 
 func is_walkable(c: Vector2i) -> bool:
-	return in_bounds(c) and walkable[idx(c)] == 1
+	return in_bounds(c) and walkable[idx(c)] == 1 and blocked[idx(c)] == 0
+
+
+## Cells within `half_width` of segment a-b (a structure's footprint).
+func cells_along(a: Vector2, b: Vector2, half_width: float) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var lo := cell_of(Vector2(minf(a.x, b.x) - half_width - CELL, minf(a.y, b.y) - half_width - CELL))
+	var hi := cell_of(Vector2(maxf(a.x, b.x) + half_width + CELL, maxf(a.y, b.y) + half_width + CELL))
+	var ab := b - a
+	for j in range(lo.y, hi.y + 1):
+		for i in range(lo.x, hi.x + 1):
+			var p := cell_centre(i, j)
+			var t := 0.0
+			if ab.length_squared() > 1e-6:
+				t = clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+			if (a + ab * t).distance_to(p) <= half_width + CELL * 0.35:
+				out.append(Vector2i(i, j))
+	return out
+
+
+func block(cells: Array[Vector2i]) -> void:
+	for c in cells:
+		if not in_bounds(c):
+			continue
+		var k := idx(c)
+		blocked[k] = 1
+		if astar.has_point(k):
+			astar.set_point_disabled(k, true)
+
+
+func unblock(cells: Array[Vector2i]) -> void:
+	for c in cells:
+		if not in_bounds(c):
+			continue
+		var k := idx(c)
+		blocked[k] = 0
+		if astar.has_point(k):
+			astar.set_point_disabled(k, false)
 
 
 func linked(a: Vector2i, b: Vector2i) -> bool:
