@@ -19,6 +19,9 @@ const Commander := preload("res://scripts/gameplay/commander.gd")
 const Hud := preload("res://scripts/ui/hud.gd")
 
 static var island_seed := 7
+static var attract := false     # title-screen backdrop: no HUD, self-playing
+var ended := false
+var _attract_restart := -1.0
 const CHAR_SCALE := 0.28
 
 var island
@@ -43,8 +46,15 @@ var hud
 
 
 func _ready() -> void:
+	if Capture.has("campaign") and not Campaign.active:
+		Campaign.new_campaign(5)
+		Campaign.sail_to(0)
 	if Capture.has("seed"):
 		island_seed = int(Capture.arg("seed"))
+	elif Campaign.active and not Campaign.current.is_empty():
+		island_seed = int(Campaign.current["seed"])
+	elif attract:
+		island_seed = randi_range(1, 99999)
 	var t0 := Time.get_ticks_msec()
 	island = IslandData.new(island_seed)
 	nav = NavGrid.new(island)
@@ -78,7 +88,7 @@ func _ready() -> void:
 	scatter.build_grass(veg, _grass_material(), foliage_mat)
 	_build_camera()
 	_build_battle()
-	print("island %d built in %d ms" % [island_seed, Time.get_ticks_msec() - t0])
+	print("island %d built in %d ms, houses=%d spots=%d" % [island_seed, Time.get_ticks_msec() - t0, house_records.size(), defender_spots.size()])
 	if Capture.has("pick"):
 		_debug_pick.call_deferred()
 	if Capture.has("collapse"):
@@ -284,57 +294,52 @@ func _build_settlement(scatter) -> void:
 	tower.build(prop_mat, island_seed)
 	scatter.block(tp.x, tp.z, 1.9)
 
-	# Houses near the tower on the same terrace.
+	# Houses around the tower. Placement relaxes in passes so every island,
+	# however rugged, gets a proper village: same terrace first, then wider,
+	# then any reachable flat ground.
+	var tower_comp: int = nav.component[nav.idx(nav.nearest_walkable(Vector2(tp.x + 2.4, tp.z)))]
 	var houses := 0
 	var placed: Array[Vector3] = [tp]
-	for c in candidates:
-		if houses >= 7:
+	var passes := [[0.3, 11.0, 0.08], [0.3, 14.0, 0.1], [99.0, 14.0, 0.12], [99.0, 18.0, 0.16]]
+	for pass_i in passes.size():
+		if houses >= 6:
 			break
-		if absf(c.y - tp.y) > 0.3 or Vector2(c.x - tp.x, c.z - tp.z).length() > 11.0:
-			continue
-		var ok := true
-		for p in placed:
-			if Vector2(c.x - p.x, c.z - p.z).length() < (3.6 if p != tp else 3.4):
-				ok = false
+		var max_dh: float = passes[pass_i][0]
+		var max_r: float = passes[pass_i][1]
+		var max_flat: float = passes[pass_i][2]
+		var pool: Array[Vector3] = candidates
+		if pass_i >= 2:
+			pool = _loose_candidates(tp, max_r, max_flat)
+		for c in pool:
+			if houses >= 7:
 				break
-		if not ok:
-			continue
-		placed.append(c)
-		var mi := MeshInstance3D.new()
-		mi.mesh = Props.house(rng.randi())
-		mi.material_override = prop_mat
-		# Face roughly toward the tower, like a square.
-		var to_tower := Vector2(tp.x - c.x, tp.z - c.z)
-		mi.rotation.y = atan2(to_tower.x, to_tower.y) + rng.randf_range(-0.3, 0.3)
-		mi.position = Vector3(c.x, c.y - 0.06, c.z)
-		add_child(mi)
-		# Solid walls so tower rubble piles up against the house.
-		var aabb := mi.mesh.get_aabb()
-		var hb := StaticBody3D.new()
-		var hs := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = Vector3(aabb.size.x - 0.3, aabb.size.y * 0.75, aabb.size.z - 0.45)
-		hs.shape = box
-		hs.position = aabb.get_center() - Vector3(0, aabb.size.y * 0.1, 0)
-		hb.add_child(hs)
-		mi.add_child(hb)
-		scatter.block(c.x, c.z, 1.5)
-		var door := Vector2(c.x, c.z) + Vector2(sin(mi.rotation.y), cos(mi.rotation.y)) * 0.95
-		paths.segment(Vector2(tp.x, tp.z), door)
-		paths.blob(door, 0.5)
-		house_records.append({"pos": Vector2(c.x, c.z), "node": mi, "door": Vector2(c.x, c.z) + Vector2(sin(mi.rotation.y), cos(mi.rotation.y)) * 1.3})
-		houses += 1
+			if absf(c.y - tp.y) > max_dh or Vector2(c.x - tp.x, c.z - tp.z).length() > max_r:
+				continue
+			var cc: Vector2i = nav.cell_of(Vector2(c.x, c.z))
+			if not nav.is_walkable(cc) or nav.component[nav.idx(cc)] != tower_comp:
+				continue
+			var ok := true
+			for p in placed:
+				if Vector2(c.x - p.x, c.z - p.z).length() < (3.6 if p != tp else 3.4):
+					ok = false
+					break
+			if not ok:
+				continue
+			placed.append(c)
+			_place_house(c, tp, rng, absf(c.y - tp.y) < 0.3)
+			houses += 1
 	paths.blob(Vector2(tp.x, tp.z), 2.3)
 
 	# Rally points for the defending squads, around the village square.
 	var tries := 0
-	while defender_spots.size() < 3 and tries < 600:
+	while defender_spots.size() < 4 and tries < 800:
 		tries += 1
 		var ang := rng.randf() * TAU
 		var reach := 2.8 + tries * 0.012
 		var centre := Vector2(tp.x, tp.z) + Vector2(cos(ang), sin(ang)) * rng.randf_range(2.8, reach + 2.0)
-		var clear: bool = absf(island.height_at(centre.x, centre.y) - tp.y) < 0.35 and island.flatness(centre.x, centre.y, 0.8) < 0.15
-		clear = clear and nav.is_walkable(nav.cell_of(centre)) and nav.component[nav.idx(nav.cell_of(centre))] == nav.component[nav.idx(nav.cell_of(Vector2(tp.x, tp.z) + Vector2(2.4, 0)))]
+		var dh_limit := 0.35 if tries < 400 else 99.0
+		var clear: bool = absf(island.height_at(centre.x, centre.y) - tp.y) < dh_limit and island.flatness(centre.x, centre.y, 0.8) < 0.15
+		clear = clear and nav.is_walkable(nav.cell_of(centre)) and nav.component[nav.idx(nav.cell_of(centre))] == tower_comp
 		for p in placed.slice(1):
 			if Vector2(centre.x - p.x, centre.y - p.z).length() < 2.9:
 				clear = false
@@ -345,6 +350,52 @@ func _build_settlement(scatter) -> void:
 			continue
 		defender_spots.append({"pos": centre, "facing": atan2(centre.x - tp.x, centre.y - tp.z)})
 		scatter.block(centre.x, centre.y, 1.2)
+
+
+## Candidate building spots on any terrace, for rugged islands.
+func _loose_candidates(tp: Vector3, max_r: float, max_flat: float) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for j in range(int(tp.z - max_r), int(tp.z + max_r) + 1):
+		for i in range(int(tp.x - max_r), int(tp.x + max_r) + 1):
+			var x := float(i)
+			var z := float(j)
+			var h: float = island.height_at(x, z)
+			if h < island.BEACH_H + 0.15:
+				continue
+			if island.flatness(x, z, 1.6) > max_flat:
+				continue
+			out.append(Vector3(x, h, z))
+	out.sort_custom(func(a: Vector3, b: Vector3) -> bool:
+		return Vector2(a.x - tp.x, a.z - tp.z).length() < Vector2(b.x - tp.x, b.z - tp.z).length())
+	return out
+
+
+func _place_house(c: Vector3, tp: Vector3, rng: RandomNumberGenerator, with_path: bool) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = Props.house(rng.randi())
+	mi.material_override = prop_mat
+	# Face roughly toward the tower, like a square.
+	var to_tower := Vector2(tp.x - c.x, tp.z - c.z)
+	mi.rotation.y = atan2(to_tower.x, to_tower.y) + rng.randf_range(-0.3, 0.3)
+	mi.position = Vector3(c.x, c.y - 0.06, c.z)
+	add_child(mi)
+	# Solid walls so tower rubble piles up against the house.
+	var aabb := mi.mesh.get_aabb()
+	var hb := StaticBody3D.new()
+	var hs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(aabb.size.x - 0.3, aabb.size.y * 0.75, aabb.size.z - 0.45)
+	hs.shape = box
+	hs.position = aabb.get_center() - Vector3(0, aabb.size.y * 0.1, 0)
+	hb.add_child(hs)
+	mi.add_child(hb)
+	scatter.block(c.x, c.z, 1.5)
+	var facing := Vector2(sin(mi.rotation.y), cos(mi.rotation.y))
+	var door := Vector2(c.x, c.z) + facing * 0.95
+	if with_path:
+		paths.segment(Vector2(tp.x, tp.z), door)
+	paths.blob(door, 0.5)
+	house_records.append({"pos": Vector2(c.x, c.z), "node": mi, "door": Vector2(c.x, c.z) + facing * 1.3})
 
 
 func _build_camera() -> void:
@@ -381,10 +432,23 @@ func _build_battle() -> void:
 	var shield_vis := {"scene": knight, "keep": ["1H_Sword", "Rectangle_Shield"], "scale": CHAR_SCALE}
 	var sword_vis := {"scene": knight, "keep": ["2H_Sword"], "scale": CHAR_SCALE}
 	var xbow_vis := {"scene": rogue, "keep": ["1H_Crossbow"], "scale": CHAR_SCALE}
-	var plan := [["shield", "Shieldwall", shield_vis, 9], ["sword", "Swordsmen", sword_vis, 8], ["archer", "Crossbows", xbow_vis, 8]]
+	var visuals := {"shield": shield_vis, "sword": sword_vis, "archer": xbow_vis}
+	# Campaign: field the living roster. Quick battle: one of each, fully trained in abilities.
+	var plan := []
+	if Campaign.active:
+		for r in Campaign.living_squads():
+			plan.append({"kind": r["kind"], "name": r["name"], "level": r["level"], "ability": r["ability"], "id": r["id"]})
+	else:
+		plan = [{"kind": "shield", "name": "Shieldwall", "level": 1, "ability": true, "id": -1},
+			{"kind": "sword", "name": "Swordsmen", "level": 1, "ability": true, "id": -1},
+			{"kind": "archer", "name": "Crossbows", "level": 1, "ability": true, "id": -1}]
 	for i in mini(plan.size(), defender_spots.size()):
 		var spot: Dictionary = defender_spots[i]
-		battle.spawn_squad(Battle.PLAYER, plan[i][0], plan[i][1], plan[i][2], spot["pos"], plan[i][3], spot["facing"])
+		var p: Dictionary = plan[i]
+		var size: int = Campaign.KINDS[p["kind"]]["size"]
+		var sq = battle.spawn_squad(Battle.PLAYER, p["kind"], p["name"], visuals[p["kind"]], spot["pos"], size, spot["facing"], {}, p["level"])
+		sq.ability_unlocked = p["ability"]
+		sq.set_meta("roster_id", p["id"])
 
 	director = Director.new()
 	director.name = "RaidDirector"
@@ -394,8 +458,15 @@ func _build_battle() -> void:
 	director.setup(battle, island, nav, Props.longboat(island_seed), raider_vis, berserk_vis, prop_mat, island_seed * 5 + 1)
 	director.victory.connect(func(): battle.cheer(Battle.PLAYER))
 	director.defeat.connect(func(): battle.cheer(Battle.RAIDERS))
+	if Campaign.active and not Campaign.current.is_empty():
+		director.waves = Campaign.waves_for(Campaign.current)
 	if Capture.has("wave"):
 		director.waves[0]["delay"] = float(Capture.arg("wave"))
+	director.victory.connect(_on_battle_end.bind(true))
+	director.defeat.connect(_on_battle_end.bind(false))
+	if attract:
+		rig.set_view(rad_to_deg(rig.yaw), -34.0, 48.0, Vector3(0, 1.0, 0))
+		return
 
 	commander = Commander.new()
 	commander.name = "Commander"
@@ -473,7 +544,36 @@ func _autoplay(dt: float) -> void:
 			s.set_path(p, false)
 
 
+func _on_battle_end(_won: bool) -> void:
+	ended = true
+	if Capture.has("campaign"):
+		get_tree().create_timer(2.0).timeout.connect(_continue_campaign)
+	if attract:
+		_attract_restart = 6.0
+
+
+## Campaign: record the result and return to the sea chart.
+func _continue_campaign() -> void:
+	var survivors := {}
+	for s in battle.squads:
+		if s.team == Battle.PLAYER and s.has_meta("roster_id"):
+			survivors[s.get_meta("roster_id")] = s.alive_count()
+	var won: bool = director.raiders_alive() == 0 and survivors.values().any(func(v): return v > 0)
+	Campaign.finish_island(won, battle.intact_houses().size(), battle.houses.size(), survivors)
+	Engine.time_scale = 1.0
+	get_tree().change_scene_to_file("res://scenes/camp.tscn")
+
+
 func _process(dt: float) -> void:
+	if attract:
+		rig.set_view(rad_to_deg(rig.yaw) + dt * 2.5, -34.0, 48.0, Vector3(0, 1.0, 0), false)
+		if _attract_restart > 0.0:
+			_attract_restart -= dt
+			if _attract_restart <= 0.0:
+				var fresh: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+				get_parent().add_child(fresh)
+				queue_free()
+				return
 	if Capture.has("dumpai") and Capture.frame() == int(Capture.arg("frames")) - 2:
 		for sq in battle.squads:
 			if sq.is_dead():
@@ -487,7 +587,7 @@ func _process(dt: float) -> void:
   ".join(lines)])
 	if battle:
 		scatter.update_tree_fade(battle.units, dt)
-	if Capture.has("autoplay") and battle:
+	if (Capture.has("autoplay") or attract) and battle:
 		_autoplay(dt)
 	# Capture helper: keep the camera on the fighting.
 	if Capture.arg("cam") == "follow" and battle:
@@ -508,14 +608,25 @@ func _strike_tower() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if Capture.has("capture"):
+	if Capture.has("capture") or attract:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		if ended and Campaign.active and event.physical_keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
+			_continue_campaign()
+			return
 		match event.physical_keycode:
+			KEY_ESCAPE:
+				if ended or not Campaign.active:
+					Engine.time_scale = 1.0
+					get_tree().change_scene_to_file("res://scenes/title.tscn")
 			KEY_R:
+				if Campaign.active:
+					return
 				Engine.time_scale = 1.0
 				get_tree().reload_current_scene()
 			KEY_N:
+				if Campaign.active:
+					return
 				Engine.time_scale = 1.0
 				island_seed += 1
 				get_tree().reload_current_scene()

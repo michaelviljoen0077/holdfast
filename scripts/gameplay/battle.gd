@@ -53,8 +53,9 @@ func setup(p_island, p_nav, p_unit_material: ShaderMaterial) -> void:
 
 ## `visual` is a Mesh or a character spec {scene, keep, scale}. `alt` optionally
 ## swaps every Nth unit for a variant: {kind, visual, every}.
-func spawn_squad(team: int, kind: String, squad_name: String, visual, at: Vector2, count: int, facing := 0.0, alt := {}) -> Squad:
+func spawn_squad(team: int, kind: String, squad_name: String, visual, at: Vector2, count: int, facing := 0.0, alt := {}, level := 1) -> Squad:
 	var s := Squad.new()
+	s.level = level
 	s.team = team
 	s.kind = kind
 	s.name = squad_name
@@ -131,6 +132,10 @@ func _apply_stats(u: Unit) -> void:
 			u.reach = 0.72
 			u.damage = 2.0
 			u.cooldown = 1.35
+	# Veteran squads: tougher and harder-hitting per level.
+	var lvl: int = u.squad.level if u.squad != null else 1
+	u.max_hp *= 1.0 + 0.3 * (lvl - 1)
+	u.damage *= 1.0 + 0.25 * (lvl - 1)
 	u.hp = u.max_hp
 	u.attack_t = randf() * u.cooldown
 
@@ -224,7 +229,7 @@ func _process(dt: float) -> void:
 	for s in squads:
 		if s.banner:
 			var alive: int = s.alive_count()
-			s.banner.visible = alive > 0
+			s.banner.visible = alive > 0 and not get_parent().get("attract")
 			if alive > 0:
 				var c := _centroid(s)
 				var target := Vector3(c.x, island.height_at(c.x, c.y) + 1.25, c.y)

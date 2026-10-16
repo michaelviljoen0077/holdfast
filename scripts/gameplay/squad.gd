@@ -25,6 +25,7 @@ var in_combat := false
 var refit_t := 0.0             # time spent resting at a house door
 var refit_cooldown := 0.0
 var visual                     # spawn spec, reused when replenishing
+var level := 1
 var ability := ""              # brace | charge | volley
 var ability_cd := 0.0          # seconds until usable again
 var ability_t := 0.0           # seconds the effect remains active

@@ -102,7 +102,7 @@ func setup(p_battle, p_director, p_commander) -> void:
 	_end_detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(_end_detail)
 	var again := _label(18, INK.darkened(0.2))
-	again.text = "Press R to defend this island again, N for a new island"
+	again.text = "Press Enter to return to the sea chart" if Campaign.active else "R replay  ·  N new island  ·  Esc title"
 	again.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(again)
 	root.add_child(_end_panel)
