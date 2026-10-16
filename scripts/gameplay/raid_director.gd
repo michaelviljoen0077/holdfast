@@ -151,6 +151,8 @@ func _find_landing(angle: float) -> Dictionary:
 
 
 func _launch_wave(crews: Array) -> void:
+	if Settings.difficulty == 0 and crews.size() > 1:
+		crews = crews.slice(0, crews.size() - 1)
 	var count := crews.size()
 	var base := rng.randf() * TAU
 	var used: Array[Vector2] = []

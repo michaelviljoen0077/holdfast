@@ -14,6 +14,8 @@ var shadows_high := true
 var screen_shake := true
 var tutorial_done := false
 var tips_seen := {}
+var difficulty := 1            # 0 Squire, 1 Warrior, 2 Jarl
+const DIFFICULTY_NAMES := ["Squire", "Warrior", "Jarl"]
 
 
 func _ready() -> void:
@@ -41,6 +43,7 @@ func _load() -> void:
 	screen_shake = cf.get_value("game", "screen_shake", screen_shake)
 	tutorial_done = cf.get_value("game", "tutorial_done", tutorial_done)
 	tips_seen = cf.get_value("game", "tips_seen", tips_seen)
+	difficulty = cf.get_value("game", "difficulty", difficulty)
 
 
 func save() -> void:
@@ -54,6 +57,7 @@ func save() -> void:
 	cf.set_value("game", "screen_shake", screen_shake)
 	cf.set_value("game", "tutorial_done", tutorial_done)
 	cf.set_value("game", "tips_seen", tips_seen)
+	cf.set_value("game", "difficulty", difficulty)
 	cf.save(PATH)
 
 

@@ -48,9 +48,7 @@ func _ready() -> void:
 			if Campaign.load_game():
 				# Mid-island saves drop you straight back into that battle.
 				_leave("res://scenes/main.tscn" if not Campaign.current.is_empty() else "res://scenes/camp.tscn"))
-	_button(col, "New Campaign", func():
-		Campaign.new_campaign()
-		_leave("res://scenes/camp.tscn"))
+	_button(col, "New Campaign", func(): _pick_difficulty())
 	_button(col, "Quick Battle", func():
 		Campaign.active = false
 		_leave("res://scenes/main.tscn"))
@@ -90,3 +88,35 @@ func _exit_tree() -> void:
 	# The backdrop lives under the root; take it down with the title.
 	if is_instance_valid(_backdrop):
 		_backdrop.queue_free()
+
+
+func _pick_difficulty() -> void:
+	var shade := ColorRect.new()
+	shade.color = Color(0, 0, 0, 0.55)
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(shade)
+	var box := VBoxContainer.new()
+	box.set_anchors_preset(Control.PRESET_CENTER)
+	box.position = Vector2(-330, -170)
+	box.custom_minimum_size = Vector2(660, 0)
+	box.add_theme_constant_override("separation", 14)
+	shade.add_child(box)
+	var t := UI.heading("Choose your trial", 40)
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(t)
+	var descs := ["Fewer longboats, softer raiders. Learn the isles.", "The voyage as it was meant to be fought.", "Hardened raiders. Every mistake costs a squad."]
+	for i in 3:
+		var b := Button.new()
+		b.text = "%s  —  %s" % [Settings.DIFFICULTY_NAMES[i], descs[i]]
+		b.custom_minimum_size = Vector2(0, 56)
+		b.pressed.connect(func():
+			Settings.difficulty = i
+			Settings.save()
+			Campaign.new_campaign()
+			_leave("res://scenes/camp.tscn"))
+		box.add_child(b)
+	var back := Button.new()
+	back.text = "Back"
+	back.custom_minimum_size = Vector2(0, 46)
+	back.pressed.connect(shade.queue_free)
+	box.add_child(back)

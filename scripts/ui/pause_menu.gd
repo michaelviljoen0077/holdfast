@@ -43,6 +43,20 @@ func _ready() -> void:
 	_slider(_settings_box, "Effects", Settings.effects, func(v): Settings.effects = v)
 	_slider(_settings_box, "Ambience", Settings.ambience, func(v): Settings.ambience = v)
 	_slider(_settings_box, "Music", Settings.music, func(v): Settings.music = v)
+	var drow := HBoxContainer.new()
+	var dl := UI.label("Difficulty", 18)
+	dl.custom_minimum_size = Vector2(170, 0)
+	drow.add_child(dl)
+	var ob := OptionButton.new()
+	for n in Settings.DIFFICULTY_NAMES:
+		ob.add_item(n)
+	ob.selected = Settings.difficulty
+	ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ob.item_selected.connect(func(i: int):
+		Settings.difficulty = i
+		Settings.save())
+	drow.add_child(ob)
+	_settings_box.add_child(drow)
 	_toggle(_settings_box, "Fullscreen", Settings.fullscreen, func(v): Settings.fullscreen = v)
 	_toggle(_settings_box, "High quality shadows", Settings.shadows_high, func(v): Settings.shadows_high = v)
 	_toggle(_settings_box, "Screen shake", Settings.screen_shake, func(v): Settings.screen_shake = v)

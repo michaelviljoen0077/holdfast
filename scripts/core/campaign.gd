@@ -446,7 +446,8 @@ func reroll_boons() -> bool:
 
 ## Enemies harden as the voyage goes on.
 func enemy_toughness() -> float:
-	return 1.0 + 0.12 * maxi(column, 0) if active else 1.0
+	var diff: float = [0.8, 1.0, 1.25][Settings.difficulty]
+	return (1.0 + 0.12 * maxi(column, 0) if active else 1.0) * diff
 
 
 ## Trait of the island being fought (campaign), or one rolled from the seed.
