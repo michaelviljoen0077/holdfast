@@ -35,6 +35,7 @@ longboats are only spotted when nearly ashore.
 | Shieldwall | Blocks most frontal blows and missiles | **Brace**: an unbreakable front; attackers are thrown back |
 | Swordsmen | Heavy two-handed hits, wreck structures | **Charge**: sprint to a point, bowling enemies over |
 | Crossbows | Ranged; reach further from high ground | **Volley**: every crossbow fires at a target area |
+| Rune-priests | Slowly heal nearby allies; rune bolts at range | **Firestorm**: a rain of fire on a target area that also burns enemy timber |
 | Freed Thralls | Quick dual-knife fighters | — |
 
 **Formations (G)**: Block (default), Line (wide front), Wedge (charges hit
@@ -48,6 +49,10 @@ around; berserkers and chieftains smash them fast.
 standing, more militia.
 
 **Refit**: a squad resting at an intact house door replaces its fallen.
+
+**Fire**: Torchbearer raiders hurl torches at houses and palisades. A burning
+house slowly burns down unless soldiers stand at its door and beat the flames
+out.
 
 ## Controls
 

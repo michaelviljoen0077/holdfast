@@ -140,8 +140,8 @@ func setup(p_battle, p_director, p_commander) -> void:
 	root.add_child(_hint)
 
 	_end_panel = _panel()
-	_end_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_end_panel.position = Vector2(-380, -100)
+	_end_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_end_panel.position = Vector2(-380, -330)
 	_end_panel.custom_minimum_size = Vector2(760, 200)
 	_end_panel.visible = false
 	var v := VBoxContainer.new()
@@ -253,6 +253,9 @@ func show_banner(title: String, sub: String, secs: float) -> void:
 
 
 func _end(title: String, detail := "") -> void:
+	# Clear the stage for the victory orbit.
+	for c in [_ability, _build_btn, _militia_btn, _card_row, _hint]:
+		create_tween().tween_property(c, "modulate:a", 0.0, 0.6)
 	_end_title.text = title
 	_end_detail.text = detail
 	_end_panel.visible = true

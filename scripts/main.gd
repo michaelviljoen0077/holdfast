@@ -689,6 +689,8 @@ func _build_battle() -> void:
 		director.waves = _assault_plan()["waves"]
 	if Capture.has("wave"):
 		director.waves[0]["delay"] = float(Capture.arg("wave"))
+	if Capture.has("nowaves"):
+		director.waves = []
 	director.victory.connect(_on_battle_end.bind(true))
 	director.defeat.connect(_on_battle_end.bind(false))
 	if attract:
@@ -851,11 +853,13 @@ func _autoplay(dt: float) -> void:
 
 
 var _victory_cam := false
+var _vc_yaw := INF
+var _vc_dist := 0.0
 
 
 func _on_battle_end(won: bool) -> void:
 	ended = true
-	_victory_cam = won and not attract and not Capture.has("autoplay")
+	_victory_cam = won and not attract and (not Capture.has("autoplay") or Capture.has("viccam"))
 	if Capture.has("campaign"):
 		get_tree().create_timer(2.0).timeout.connect(_continue_campaign)
 	if attract:
@@ -884,14 +888,18 @@ func _process(dt: float) -> void:
 	if _victory_cam:
 		# A slow victory orbit around the heart of the island.
 		var real := dt / maxf(Engine.time_scale, 0.01)
+		if _vc_yaw == INF:
+			_vc_yaw = rad_to_deg(rig.yaw)
+			_vc_dist = rig.distance
 		var heart := Vector3.ZERO
 		if mission == "assault" and camp_spots.has("centre"):
 			var cc: Vector2 = camp_spots["centre"]
 			heart = Vector3(cc.x, island.height_at(cc.x, cc.y) + 0.8, cc.y)
 		elif tower:
 			heart = tower.position + Vector3(0, 1.2, 0)
-		var dist: float = lerpf(rig.distance, 20.0, clampf(real * 0.6, 0.0, 1.0))
-		rig.set_view(rad_to_deg(rig.yaw) + real * 7.0, lerpf(rad_to_deg(rig.pitch), -26.0, clampf(real, 0.0, 1.0)), dist, rig.position.lerp(heart, clampf(real * 1.5, 0.0, 1.0)), false)
+		_vc_yaw += real * 9.0
+		_vc_dist = move_toward(_vc_dist, 19.0, real * 14.0)
+		rig.set_view(_vc_yaw, -27.0, _vc_dist, heart, false)
 	if battle and director and not attract:
 		var ashore := 0
 		for u in battle.units:
