@@ -1357,6 +1357,8 @@ func _damage_mult(u, t) -> float:
 # Militia ---------------------------------------------------------------------
 
 var militia_called := false
+var freed := 0
+signal captives_freed(squad)
 signal militia_raised(squad)
 
 
@@ -1400,3 +1402,15 @@ func _fire_bolt_at_structure(u: Unit, st) -> void:
 	Sfx.play("bow", from, -8.0, 60)
 	arrows.append({"node": node, "from": from, "to": to, "t": 0.0, "dur": 0.4 + dist * 0.04, "arc": 0.6 + dist * 0.06,
 		"target": null, "dmg": u.damage, "stuck_t": -1.0, "aim": c, "team": u.team, "structure": st})
+
+
+func free_captives(pen) -> void:
+	if not visuals.has("militia"):
+		return
+	var c: Vector2 = pen.centre()
+	var s := spawn_squad(PLAYER, "militia", "Freed Thralls", visuals["militia"], c, pen.captives, randf() * TAU)
+	s.cols = 4
+	freed += pen.captives
+	message.emit("Captives freed: they take up arms with you")
+	Sfx.play_ui("cleared", -4.0)
+	captives_freed.emit(s)

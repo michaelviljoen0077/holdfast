@@ -22,6 +22,8 @@ const PauseMenu := preload("res://scripts/ui/pause_menu.gd")
 
 static var island_seed := 7
 static var attract := false     # title-screen backdrop: no HUD, self-playing
+var mission := "defend"          # defend | assault
+var camp_spots: Dictionary = {}  # assault layout: longhouses, towers, pens, garrison, landing
 var ended := false
 var _attract_restart := -1.0
 const CHAR_SCALE := 0.28
@@ -60,6 +62,8 @@ func _ready() -> void:
 		island_seed = int(Campaign.current["seed"])
 	elif attract:
 		island_seed = randi_range(1, 99999)
+	if Capture.has("assault") or (Campaign.active and Campaign.current.get("type", "defend") == "assault"):
+		mission = "assault"
 	var t0 := Time.get_ticks_msec()
 	island = IslandData.new(island_seed)
 	nav = NavGrid.new(island)
@@ -84,7 +88,10 @@ func _ready() -> void:
 	scatter = Scatter.new(island, island_seed)
 	paths = Paths.new(island_seed)
 	scatter.paths = paths
-	_build_settlement(scatter)
+	if mission == "assault":
+		_build_camp_layout(scatter)
+	else:
+		_build_settlement(scatter)
 	terrain_mat.set_shader_parameter("path_mask", paths.texture())
 	terrain_mat.set_shader_parameter("path_extent", Paths.EXTENT)
 	var veg := Node3D.new()
@@ -416,6 +423,158 @@ func _place_house(c: Vector3, tp: Vector3, rng: RandomNumberGenerator, with_path
 	house_records.append({"pos": Vector2(c.x, c.z), "node": mi, "door": Vector2(c.x, c.z) + facing * 1.3})
 
 
+func _assault_plan() -> Dictionary:
+	if Campaign.active and not Campaign.current.is_empty():
+		return Campaign.assault_plan(Campaign.current)
+	return Campaign.assault_plan({"difficulty": int(Capture.arg("difficulty", "2"))})
+
+
+## Raider camp layout: longhouses round a fire on the best plateau, watchtowers
+## at the edge, palisade arcs with gaps, captive pens, and a beach to land on
+## on the far side of the island.
+func _build_camp_layout(scatter) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = island_seed * 53
+	var plan := _assault_plan()
+	var candidates: Array[Vector3] = []
+	for j in range(-20, 21):
+		for i in range(-20, 21):
+			var h: float = island.height_at(i, j)
+			if h < island.BEACH_H + island.LEVEL_H * 0.6 or island.flatness(i, j, 1.8) > 0.1:
+				continue
+			candidates.append(Vector3(i, h, j))
+	candidates.sort_custom(func(a: Vector3, b: Vector3) -> bool:
+		return a.y - Vector2(a.x, a.z).length() * 0.02 > b.y - Vector2(b.x, b.z).length() * 0.02)
+	var centre := candidates[0] if not candidates.is_empty() else Vector3(0, 1, 0)
+	var c2 := Vector2(centre.x, centre.z)
+	var comp: int = nav.component[nav.idx(nav.nearest_walkable(c2))]
+	var spots := {"longhouses": [], "towers": [], "pens": [], "garrison": [], "landings": []}
+	var taken: Array[Vector2] = []
+	var ok_spot := func(p: Vector2, clearance: float, flat: float) -> bool:
+		var cell: Vector2i = nav.cell_of(p)
+		if not nav.is_walkable(cell) or nav.component[nav.idx(cell)] != comp:
+			return false
+		if island.flatness(p.x, p.y, clearance) > flat:
+			return false
+		for q in taken:
+			if q.distance_to(p) < clearance + 1.6:
+				return false
+		return true
+	# Longhouses ring the central fire.
+	for tries in 400:
+		if spots["longhouses"].size() >= plan["longhouses"]:
+			break
+		var a := rng.randf() * TAU
+		var p := c2 + Vector2(cos(a), sin(a)) * rng.randf_range(3.0, 6.0 + tries * 0.01)
+		if ok_spot.call(p, 2.4, 0.14 + tries * 0.0004):
+			taken.append(p)
+			spots["longhouses"].append({"pos": p, "yaw": atan2(c2.x - p.x, c2.y - p.y) + PI * 0.5})
+	for tries in 300:
+		if spots["pens"].size() >= plan["pens"]:
+			break
+		var a := rng.randf() * TAU
+		var p := c2 + Vector2(cos(a), sin(a)) * rng.randf_range(2.0, 5.0)
+		if ok_spot.call(p, 0.9, 0.18):
+			taken.append(p)
+			spots["pens"].append(p)
+	for tries in 300:
+		if spots["towers"].size() >= plan["towers"]:
+			break
+		var a := rng.randf() * TAU
+		var p := c2 + Vector2(cos(a), sin(a)) * rng.randf_range(6.5, 9.0)
+		if ok_spot.call(p, 0.8, 0.2):
+			taken.append(p)
+			spots["towers"].append(p)
+	# Garrison posts around the fire.
+	for k in plan["garrison"].size():
+		var a: float = TAU * k / plan["garrison"].size() + rng.randf() * 0.4
+		var cell: Vector2i = nav.nearest_walkable(c2 + Vector2(cos(a), sin(a)) * 3.5, 8)
+		spots["garrison"].append({"pos": nav.cell_centre(cell.x, cell.y), "facing": a})
+	# The warband lands on the beach farthest from the camp that can reach it.
+	var best := Vector2.ZERO
+	var best_d := -1.0
+	for k in 24:
+		var a := TAU * k / 24.0
+		var dir := Vector2(cos(a), sin(a))
+		var r := 30.0
+		while r > 4.0:
+			var p := dir * r
+			var cell: Vector2i = nav.cell_of(p)
+			if nav.is_walkable(cell) and island.height_at(p.x, p.y) > 0.0:
+				break
+			r -= 0.5
+		var p := dir * r
+		var cell2: Vector2i = nav.cell_of(p)
+		if not nav.is_walkable(cell2) or nav.component[nav.idx(cell2)] != comp:
+			continue
+		var d := p.distance_to(c2)
+		if d > best_d:
+			best_d = d
+			best = p
+	var face := atan2(c2.x - best.x, c2.y - best.y)
+	var side := Vector2(cos(face), -sin(face))
+	for k in 4:
+		var off := side * ((k % 2) * 2 - 1) * (1.4 + (k / 2) * 2.8)
+		var cell3: Vector2i = nav.nearest_walkable(best + off, 8)
+		spots["landings"].append({"pos": nav.cell_centre(cell3.x, cell3.y), "facing": face})
+	spots["centre"] = c2
+	camp_spots = spots
+	for b in spots["longhouses"]:
+		scatter.block(b["pos"].x, b["pos"].y, 2.6)
+	for p in spots["pens"] + spots["towers"]:
+		scatter.block(p.x, p.y, 1.2)
+	scatter.block(c2.x, c2.y, 1.5)
+	paths.blob(c2, 3.2)
+	for b in spots["longhouses"]:
+		paths.segment(c2, b["pos"])
+
+
+func _populate_camp(enemy_vis: Dictionary) -> void:
+	var plan := _assault_plan()
+	var lhs := []
+	for b in camp_spots["longhouses"]:
+		var lh := preload("res://scripts/gameplay/longhouse.gd").new()
+		battle.add_structure(lh)
+		lh.build(nav, island, b["pos"], b["yaw"], Battle.RAIDERS)
+		lhs.append(lh)
+	camp_spots["longhouse_nodes"] = lhs
+	for p in camp_spots["pens"]:
+		var pen := preload("res://scripts/gameplay/captive_pen.gd").new()
+		battle.add_structure(pen)
+		pen.build(nav, island, p, battle.visuals["militia"], 5)
+	var garrison := []
+	for i in plan["garrison"].size():
+		var crew: Dictionary = director.CREWS[plan["garrison"][i]]
+		var spot: Dictionary = camp_spots["garrison"][i]
+		var alt := {}
+		if crew["alt"] != "":
+			alt = {"kind": crew["alt"], "visual": enemy_vis[crew["alt"]], "every": crew["alt_every"]}
+		var sq = battle.spawn_squad(Battle.RAIDERS, crew["kind"], crew["name"], enemy_vis[crew["kind"]], spot["pos"], 7, spot["facing"], alt)
+		sq.engage_radius = 5.0
+		sq.leash = 6.0
+		garrison.append(sq)
+	# Watchtowers, each with two bowmen on the platform.
+	for p in camp_spots["towers"]:
+		var wt := preload("res://scripts/gameplay/watchtower.gd").new()
+		battle.add_structure(wt)
+		wt.build(nav, island, p, Battle.RAIDERS)
+		var sq = battle.spawn_squad(Battle.RAIDERS, "draugr_archer", "Tower bowmen", enemy_vis["draugr_archer"], p, 2, 0.0)
+		sq.engage_radius = 11.0
+		sq.leash = 0.1
+		for k in sq.units.size():
+			var u = sq.units[k]
+			u.perched = true
+			u.perch_y = wt.perch.y
+			u.pos = p + Vector2((k - 0.5) * 0.5, 0.0)
+			u.slot = u.pos
+			wt.garrison.append(u)
+		garrison.append(sq)
+	# Camp fire in the middle.
+	var c: Vector2 = camp_spots["centre"]
+	battle.attach_fire(battle, Vector3(c.x, island.height_at(c.x, c.y) + 0.2, c.y), 0.5)
+	camp_spots["garrison_squads"] = garrison
+
+
 func _build_camera() -> void:
 	rig = CameraRig.new()
 	rig.name = "CameraRig"
@@ -452,6 +611,8 @@ func _build_battle() -> void:
 	var xbow_vis := {"scene": rogue, "keep": ["1H_Crossbow"], "scale": CHAR_SCALE}
 	var visuals := {"shield": shield_vis, "sword": sword_vis, "archer": xbow_vis}
 	# Campaign: field the living roster. Quick battle: one of each, fully trained in abilities.
+	if mission == "assault":
+		defender_spots = camp_spots.get("landings", defender_spots)
 	var plan := []
 	if Campaign.active:
 		for r in Campaign.living_squads():
@@ -487,6 +648,8 @@ func _build_battle() -> void:
 		"attach": {"handslot_r": sk + "Skeleton_Axe.gltf", "handslot_l": sk + "Skeleton_Shield_Large_A.gltf"}}
 	battle.visuals = enemy_vis
 	battle.visuals["militia"] = {"scene": load("res://assets/kaykit/characters/Rogue.glb"), "keep": ["Knife", "Knife_Offhand"], "scale": CHAR_SCALE * 0.95}
+	if mission == "assault":
+		_populate_camp(enemy_vis)
 	director.setup(battle, island, nav, Props.longboat(island_seed), enemy_vis, prop_mat, island_seed * 5 + 1)
 	if Capture.has("boss"):
 		director.waves = [{"delay": 1.0, "boats": ["jarl"]}]
@@ -494,6 +657,11 @@ func _build_battle() -> void:
 	director.defeat.connect(func(): battle.cheer(Battle.RAIDERS))
 	if Campaign.active and not Campaign.current.is_empty():
 		director.waves = Campaign.waves_for(Campaign.current)
+	if mission == "assault":
+		director.mode = "assault"
+		director.objectives = camp_spots["longhouse_nodes"]
+		director.garrison = camp_spots["garrison_squads"]
+		director.waves = _assault_plan()["waves"]
 	if Capture.has("wave"):
 		director.waves[0]["delay"] = float(Capture.arg("wave"))
 	director.victory.connect(_on_battle_end.bind(true))
@@ -540,8 +708,11 @@ func _build_battle() -> void:
 	threats.setup(director, battle, island, rig)
 	var island_name: String = Campaign.current.get("name", "") if Campaign.active else ""
 	if island_name == "":
-		island_name = "Hold the island"
-	hud.show_banner(island_name, "%s  ·  Raiders are coming. Keep the village standing." % atmosphere.label(), 5.0)
+		island_name = "Raider camp" if mission == "assault" else "Hold the island"
+	if mission == "assault":
+		hud.show_banner(island_name, "%s  ·  Burn their longhouses. Free the captives." % atmosphere.label(), 5.0)
+	else:
+		hud.show_banner(island_name, "%s  ·  Raiders are coming. Keep the village standing." % atmosphere.label(), 5.0)
 	hud.topple_pressed.connect(commander.arm_topple)
 	if Capture.has("speed"):
 		Engine.time_scale = float(Capture.arg("speed"))
@@ -563,6 +734,27 @@ func _autoplay(dt: float) -> void:
 		if s.team != battle.PLAYER or s.is_dead() or s.order != 0:
 			continue
 		var c: Vector2 = battle._centroid(s)
+		if mission == "assault" and s.siege == null and not s.in_combat:
+			var tgt = null
+			var tgt_score := INF
+			for st in battle.structures:
+				if st.dead or st.team == Battle.PLAYER or st.label == "Longboat":
+					continue
+				if st.label == "Watchtower" and s.kind != "sword":
+					continue
+				# Pens first when close, otherwise the nearest longhouse.
+				var score: float = c.distance_to(st.centre()) - (6.0 if st.label == "Captive pen" else 0.0)
+				if score < tgt_score:
+					tgt_score = score
+					tgt = st
+			if tgt != null and s.kind != "archer":
+				commander.order_siege(s, tgt)
+				continue
+			if tgt != null and s.kind == "archer" and c.distance_to(tgt.centre()) > 8.0:
+				var ap: PackedVector2Array = nav.find_path(s.anchor, tgt.nearest_point(c, 6.0))
+				if not ap.is_empty():
+					s.set_path(ap, true)
+				continue
 		if s.ability_ready():
 			var foe := Vector2.INF
 			for u in battle.units:
@@ -630,6 +822,12 @@ func _continue_campaign() -> void:
 	for s in battle.squads:
 		if s.team == Battle.PLAYER and s.has_meta("roster_id"):
 			survivors[s.get_meta("roster_id")] = s.alive_count()
+	if mission == "assault":
+		var won_a: bool = director.burned() == director.objectives.size()
+		Campaign.finish_assault(won_a, director.burned(), director.objectives.size(), battle.freed, survivors, battle.stats["slain"], battle.stats["lost"])
+		Engine.time_scale = 1.0
+		Fader.go("res://scenes/camp.tscn")
+		return
 	var won: bool = director.raiders_alive() == 0 and survivors.values().any(func(v): return v > 0)
 	Campaign.finish_island(won, battle.intact_houses().size(), battle.houses.size(), survivors, battle.stats["slain"], battle.stats["lost"], battle.stats.get("boats", 0))
 	Engine.time_scale = 1.0

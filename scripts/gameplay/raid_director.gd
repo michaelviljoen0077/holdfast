@@ -39,6 +39,10 @@ var wave_i := 0
 var wave_clock := 0.0
 var boats: Array = []      # {node, from, to, t, dur, squad, seats, state, unload_t, wade, wait}
 var finished := false
+var mode := "defend"           # defend | assault
+var objectives: Array = []     # assault: longhouses that must burn
+var garrison: Array = []       # assault: defending squads
+var _alarm := false
 var _ai_t := 0.0
 var _cleared_wave := 0
 
@@ -389,6 +393,17 @@ func _check_end() -> void:
 	for s in battle.squads:
 		if s.team == battle.PLAYER:
 			player_alive += s.alive_count()
+	if mode == "assault":
+		_assault_think()
+		if player_alive == 0:
+			finished = true
+			print("RESULT defeat assault burned=%d/%d" % [burned(), objectives.size()])
+			defeat.emit()
+		elif burned() == objectives.size():
+			finished = true
+			print("RESULT victory assault burned=%d/%d player_alive=%d freed=%d" % [burned(), objectives.size(), player_alive, battle.freed])
+			victory.emit()
+		return
 	# Burnt houses cost you the island's reward; only losing the army loses the battle.
 	if player_alive == 0:
 		finished = true
@@ -464,3 +479,35 @@ func _blocking_wall(squad, from: Vector2, to: Vector2):
 			best_d = d
 			best = w
 	return best
+
+
+func burned() -> int:
+	return objectives.filter(func(o): return o.dead).size()
+
+
+## Garrison AI: hold the camp until something stirs, then hunt the intruders.
+func _assault_think() -> void:
+	if not _alarm:
+		for o in objectives:
+			if o.hp < o.max_hp:
+				_alarm = true
+		for g in garrison:
+			if g.in_combat:
+				_alarm = true
+		if _alarm:
+			battle.message.emit("The camp is roused")
+			Sfx.play_ui("horn", -6.0)
+	if not _alarm or _ai_t > 0.45:
+		return
+	for g in garrison:
+		if g.is_dead() or g.kind == "draugr_archer" or g.in_combat:
+			continue
+		var c: Vector2 = battle._centroid(g)
+		var prey = _nearest_player_squad(c)
+		if prey == null:
+			continue
+		var dest: Vector2 = battle._centroid(prey)
+		if g.order == Squad.Order.HOLD or g.destination().distance_to(dest) > 2.5:
+			var p: PackedVector2Array = nav.find_path(g.anchor, dest)
+			if not p.is_empty():
+				g.set_path(p, true)

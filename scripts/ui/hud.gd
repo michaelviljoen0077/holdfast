@@ -167,7 +167,10 @@ func setup(p_battle, p_director, p_commander) -> void:
 	director.victory.connect(func():
 		var saved: int = battle.intact_houses().size()
 		var total: int = battle.houses.size()
-		_end("The island holds" if saved == total else "Victory, at a cost", _stat_line()))
+		if director.mode == "assault":
+			_end("The camp burns", _stat_line())
+		else:
+			_end("The island holds" if saved == total else "Victory, at a cost", _stat_line()))
 	director.defeat.connect(func(): _end("Your warband has fallen", _stat_line()))
 	commander.selection_changed.connect(func(_s): _refresh_cards())
 	_build_tutorial(root)
@@ -388,6 +391,18 @@ func _process(dt: float) -> void:
 	_boss_box.visible = boss != null and boss.alive()
 	if boss != null:
 		_boss_bar.value = lerpf(_boss_bar.value, boss.hp / boss.max_hp * 100.0, clampf(real_dt * 6.0, 0.0, 1.0))
+	if director.mode == "assault":
+		_status.text = "Longhouses burned   %d / %d
+Defenders left   %d
+Captives freed   %d" % [director.burned(), director.objectives.size(), director.raiders_alive(), battle.freed]
+		_ability.visible = false
+		_build_btn.visible = false
+		_militia_btn.visible = false
+		if commander.selected != null or commander.ability_armed:
+			_hint.text = "RMB a longhouse, tower or pen to attack it  •  RMB ground to move  •  F ability  •  G formation"
+		else:
+			_hint.text = "Burn every longhouse to win  •  Break the pens to free captives  •  Hack a watchtower's legs to topple it"
+		return
 	var houses: int = battle.intact_houses().size()
 	var raiders: int = director.raiders_alive()
 	var next: float = director.time_to_next_wave()
@@ -408,6 +423,8 @@ func _process(dt: float) -> void:
 
 
 func _stat_line() -> String:
+	if director.mode == "assault":
+		return "Longhouses burned %d / %d    ·    Raiders slain %d    ·    Soldiers lost %d    ·    Captives freed %d" % [director.burned(), director.objectives.size(), battle.stats["slain"], battle.stats["lost"], battle.freed]
 	var saved: int = battle.intact_houses().size()
 	var total: int = battle.houses.size()
 	var line := "Houses saved %d / %d    ·    Raiders slain %d    ·    Soldiers lost %d" % [saved, total, battle.stats["slain"], battle.stats["lost"]]

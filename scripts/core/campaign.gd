@@ -8,6 +8,7 @@ const COLUMNS := 6                  # islands to cross, the last is the finale
 const ISLAND_REWARD_PER_HOUSE := 10
 
 const KINDS := {
+	"militia": {"title": "Freed Thralls", "size": 7, "ability": ""},
 	"shield": {"title": "Shieldwall", "size": 9, "ability": "Brace"},
 	"sword": {"title": "Swordsmen", "size": 8, "ability": "Charge"},
 	"archer": {"title": "Crossbows", "size": 8, "ability": "Volley"},
@@ -138,6 +139,7 @@ func _build_chart() -> void:
 				"visited": false,
 				"finale": c == COLUMNS - 1,
 				"name": _island_name(),
+				"type": "assault" if (c >= 1 and c < COLUMNS - 1 and rng.randf() < 0.32) else "defend",
 			}
 			col.append(node)
 		chart.append(col)
@@ -348,3 +350,41 @@ func load_game() -> bool:
 func delete_save() -> void:
 	if has_save():
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+
+
+## Garrison and reinforcement plan for a raider-camp assault.
+func assault_plan(node: Dictionary) -> Dictionary:
+	var d: int = node["difficulty"]
+	var garrisons := [["raiders", "raiders"], ["raiders", "draugr", "raiders"], ["raiders", "berserkers", "draugr"],
+		["chieftain", "draugr", "raiders", "berserkers"], ["chieftain", "draugr", "berserkers", "draugr"]]
+	var plan := {"garrison": garrisons[mini(d, 4)], "towers": 1 + d / 2, "longhouses": 2 + mini(d, 2), "pens": 1 + int(d >= 2)}
+	plan["waves"] = [] if d < 2 else [{"delay": 75.0, "boats": ["raiders"] if d < 4 else ["raiders", "berserkers"]}]
+	return plan
+
+
+func finish_assault(won: bool, burned: int, total: int, freed: int, survivors: Dictionary, slain := 0, lost := 0) -> void:
+	var earned := burned * 18 + (20 if won else 0)
+	gold += earned
+	totals["islands"] += 1 if won else 0
+	totals["slain"] += slain
+	totals["lost"] += lost
+	var fallen := []
+	for r in roster:
+		if r["alive"] and survivors.get(r["id"], 0) <= 0:
+			r["alive"] = false
+			fallen.append(r["name"])
+	# Freed captives become a new squad of thralls.
+	var joined := ""
+	if freed > 0 and living_squads().size() < MAX_SQUADS + 1:
+		var sq := _add_squad("militia")
+		joined = sq["name"]
+	last_result = {"won": won, "saved": burned, "total": total, "earned": earned, "fallen": fallen,
+		"finale": false, "assault": true, "joined": joined}
+	current = {}
+	if won:
+		_offer_boons()
+	changed.emit()
+	if is_over():
+		delete_save()
+	else:
+		save_game()

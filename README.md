@@ -41,7 +41,7 @@ are replaced and the wounded healed (25 s cooldown).
 | --- | --- |
 | Left click | Select a squad (time slows while a squad is selected) |
 | Right click | Move the selected squad (path preview follows the cursor) |
-| 1 – 4 | Select squad by number |
+| 1 â€“ 4 | Select squad by number |
 | F (or Space) | Use the selected squad's ability; Charge and Volley then need a ground click |
 | T, then left click | Topple the tower in the clicked direction (crushes anyone underneath, friend or foe) |
 | WASD / middle-drag | Pan |
