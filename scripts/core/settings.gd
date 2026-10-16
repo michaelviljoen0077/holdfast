@@ -13,6 +13,7 @@ var fullscreen := false
 var shadows_high := true
 var screen_shake := true
 var tutorial_done := false
+var tips_seen := {}
 
 
 func _ready() -> void:
@@ -39,6 +40,7 @@ func _load() -> void:
 	shadows_high = cf.get_value("video", "shadows_high", shadows_high)
 	screen_shake = cf.get_value("game", "screen_shake", screen_shake)
 	tutorial_done = cf.get_value("game", "tutorial_done", tutorial_done)
+	tips_seen = cf.get_value("game", "tips_seen", tips_seen)
 
 
 func save() -> void:
@@ -51,6 +53,7 @@ func save() -> void:
 	cf.set_value("video", "shadows_high", shadows_high)
 	cf.set_value("game", "screen_shake", screen_shake)
 	cf.set_value("game", "tutorial_done", tutorial_done)
+	cf.set_value("game", "tips_seen", tips_seen)
 	cf.save(PATH)
 
 

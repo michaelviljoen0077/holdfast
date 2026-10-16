@@ -378,6 +378,7 @@ func _make_card(s, index: int) -> Dictionary:
 func _process(dt: float) -> void:
 	var real_dt := dt / maxf(Engine.time_scale, 0.01)
 	_tut_tick(real_dt)
+	_tips_tick(real_dt)
 	if _banner_t > 0.0:
 		_banner_t -= real_dt
 		var a := clampf(minf(_banner_t, 1.0), 0.0, 1.0)
@@ -433,3 +434,65 @@ func _stat_line() -> String:
 		var gold := saved * Campaign.ISLAND_REWARD_PER_HOUSE + (15 if saved == total else 0)
 		line += "\n+%d gold" % gold
 	return line
+
+
+# Contextual tips ------------------------------------------------------------
+# One-off hints shown the first time a mechanic matters, after the tutorial.
+
+var _tip_panel: PanelContainer
+var _tip_label: Label
+var _tip_t := 0.0
+var _tip_cool := 6.0
+
+
+func _tip(id: String, text: String) -> void:
+	if Settings.tips_seen.has(id) or Capture.has("capture") or _tip_t > 0.0:
+		return
+	if _tut_panel != null and _tut_step < TUTORIAL.size():
+		return
+	Settings.tips_seen[id] = true
+	Settings.save()
+	if _tip_panel == null:
+		_tip_panel = PanelContainer.new()
+		_tip_panel.add_theme_stylebox_override("panel", _box(Color(0.1, 0.08, 0.06, 0.92), Color(0.6, 0.85, 1.0), 2))
+		_tip_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+		_tip_panel.position = Vector2(24, -150)
+		_tip_panel.custom_minimum_size = Vector2(560, 0)
+		_tip_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_tip_label = _label(19, INK)
+		_tip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_tip_label.custom_minimum_size = Vector2(530, 0)
+		_tip_panel.add_child(_tip_label)
+		get_child(0).add_child(_tip_panel)
+	_tip_label.text = "Tip    " + text
+	_tip_t = 9.0
+	_tip_panel.modulate.a = 0.0
+	create_tween().tween_property(_tip_panel, "modulate:a", 1.0, 0.4)
+
+
+func _tips_tick(real_dt: float) -> void:
+	if _tip_t > 0.0:
+		_tip_t -= real_dt
+		if _tip_t <= 0.0 and _tip_panel:
+			create_tween().tween_property(_tip_panel, "modulate:a", 0.0, 0.5)
+			_tip_cool = 4.0
+		return
+	_tip_cool -= real_dt
+	if _tip_cool > 0.0:
+		return
+	if director.mode == "assault":
+		_tip("assault", "Raider camp: select a squad and right-click a longhouse to burn it. Break the pens to free captives who will fight for you.")
+		for st in battle.structures:
+			if st.label == "Watchtower" and not st.dead:
+				_tip("tower", "Bowmen on watchtowers shoot further from up high. Send Swordsmen to hack the legs and the tower falls, bowmen and all.")
+		return
+	if director.wave_i == 0 and director.time_to_next_wave() > 3.0:
+		_tip("build", "Before the boats arrive: press B to build palisades across the routes raiders will take. Click a start point, then an end point.")
+	for b in director.boats:
+		if b["state"] == "beached":
+			_tip("burn", "A longboat has beached. Right-click it with a squad to set it alight before it rows home: burnt boats pay a bounty.")
+	for s in battle.squads:
+		if s.team == battle.PLAYER and s.in_combat:
+			_tip("formation", "Press G to change a selected squad's formation: Line for a wide front, Wedge to charge, Ring to hold on all sides.")
+		if s.team == battle.PLAYER and s.alive_count() * 2 < s.units.size() and not s.is_dead():
+			_tip("refit", "Hurt squads can rest at a house door to refit, or press M to call the village militia.")

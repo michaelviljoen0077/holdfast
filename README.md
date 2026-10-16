@@ -12,43 +12,61 @@ Double-click `run.bat`, or open the folder in Godot 4.7.2 and press F5.
 ## How to play
 
 **New Campaign** sails a warband across a sea chart of six islands, ending at
-the Jarl's fleet. On each island, raiders land in waves from longboats and try
-to burn the village. Every house you save earns gold. Spend it in the war camp
-between islands to teach squads their ability, train them (up to three stars),
-or recruit new squads. A squad wiped out in battle is gone for good, and the
-campaign ends if the whole warband falls.
+the Drowned Jarl's fleet. Two kinds of island:
 
-**Quick Battle** drops you onto a random island with one of each squad.
+- **Defend** a village while raiders land in waves. Every house you save pays
+  gold. Burn beached longboats before they row home for a bounty.
+- **Assault** a raider camp (flame icon): burn every longhouse, topple the
+  bowman-manned watchtowers, and break the captive pens — freed thralls join
+  your warband for good.
 
-Islands roll their own weather: clear skies, golden hour, overcast, storm
-(rain, lightning, rough seas) or moonlit night (lanterns at every door).
-Later islands bring the Drowned: draugr that pull themselves back together
-once after being cut down, skeleton bowmen, and armoured champions. Raider
-chieftains quicken every raider around them.
+After each won island, choose one of three **boons** (13 in the pool), so
+every run builds a different warband. In the war camp spend gold to teach
+abilities, train squads to three stars, recruit, buy timber or veteran
+recruits. A squad wiped out in battle is gone for good.
+
+Islands roll **weather** (clear, golden hour, overcast, storm, moonlit night)
+and often a **trait** (Timberland, Prosperous, Haunted Shore, Old Ruins,
+Veteran Raiders, Fair Winds). Storms shorten bowshots and slow fires; at night
+longboats are only spotted when nearly ashore.
 
 | Squad | Strength | Ability (F) |
 | --- | --- | --- |
-| Shieldwall | Blocks most frontal blows | **Brace**: an unbreakable front for 6 s; attackers are thrown back |
-| Swordsmen | Heavy two-handed hits, no block | **Charge**: sprint to a point, bowling enemies over |
-| Crossbows | Ranged, fragile up close | **Volley**: every crossbow fires at a target area |
+| Shieldwall | Blocks most frontal blows and missiles | **Brace**: an unbreakable front; attackers are thrown back |
+| Swordsmen | Heavy two-handed hits, wreck structures | **Charge**: sprint to a point, bowling enemies over |
+| Crossbows | Ranged; reach further from high ground | **Volley**: every crossbow fires at a target area |
+| Freed Thralls | Quick dual-knife fighters | — |
 
-A squad that rests at an intact house door for 3 seconds refits: the fallen
-are replaced and the wounded healed (25 s cooldown).
+**Formations (G)**: Block (default), Line (wide front), Wedge (charges hit
+twice as hard, a little faster) and Ring (shields face every way, slow).
+Fighting downhill hits harder.
+
+**Fortify (B)**: spend timber on palisades. Raiders must hack through or go
+around; berserkers and chieftains smash them fast.
+
+**Militia (M)**: once per battle the village takes up arms — more houses
+standing, more militia.
+
+**Refit**: a squad resting at an intact house door replaces its fallen.
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
 | Left click | Select a squad (time slows while a squad is selected) |
-| Right click | Move the selected squad (path preview follows the cursor) |
-| 1 – 4 | Select squad by number |
-| F (or Space) | Use the selected squad's ability; Charge and Volley then need a ground click |
-| T, then left click | Topple the tower in the clicked direction (crushes anyone underneath, friend or foe) |
+| Right click | Move the selected squad; drag to set the facing it takes on arrival |
+| Right click a structure | Attack an enemy longboat, longhouse, watchtower or pen |
+| 1 – 5 | Select squad by number |
+| F (or Space) | Squad ability; Charge and Volley then need a ground click |
+| G | Cycle the selected squad's formation |
+| B | Build palisades (click start, click end; chains; right click to stop) |
+| M | Call the militia |
+| T, then left click | Topple the tower in the clicked direction (crushes friend and foe) |
 | WASD / middle-drag | Pan |
-| Q / E / right-drag | Orbit |
+| Q / E / right-drag (nothing selected) | Orbit |
 | Mouse wheel | Zoom |
 | Enter | After a campaign battle, return to the sea chart |
-| Esc | Cancel the current order, otherwise open the pause menu (settings, restart, leave) |
+| Esc | Cancel the current order, otherwise open the pause menu |
 | R / N | Quick battle: replay / new island |
 | F12 | Screenshot to `shots/` |
 

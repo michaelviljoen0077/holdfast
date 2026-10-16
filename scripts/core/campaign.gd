@@ -146,7 +146,7 @@ func _build_chart() -> void:
 		var count := 1 if c == COLUMNS - 1 else rng.randi_range(2, 3)
 		for i in count:
 			# Gentle ramp: the first landfall is always the easiest.
-			var difficulty := 0 if c == 0 else (c - 1 if c < 2 else c) + (1 if rng.randf() < 0.35 else 0)
+			var difficulty := 0 if c == 0 else c - 1 + (1 if rng.randf() < 0.4 else 0)
 			var node := {
 				"seed": rng.randi_range(1, 99999),
 				"difficulty": difficulty,
