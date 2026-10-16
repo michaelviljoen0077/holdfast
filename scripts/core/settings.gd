@@ -27,6 +27,8 @@ func _ready() -> void:
 			AudioServer.set_bus_name(i, bus_name)
 			AudioServer.set_bus_send(i, "Master")
 	_load()
+	if Capture.has("difficulty_level"):
+		difficulty = int(Capture.arg("difficulty_level"))
 	apply()
 
 
