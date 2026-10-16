@@ -91,7 +91,7 @@ func _process(dt: float) -> void:
 	dt = dt / maxf(Engine.time_scale, 0.01)
 	var move := Vector2.ZERO if Capture.has("capture") else Input.get_vector("cam_left", "cam_right", "cam_back", "cam_forward")
 	if move != Vector2.ZERO:
-		_pan(Vector2(move.x, move.y) * _t_dist * 0.9 * dt)
+		_pan(Vector2(move.x, -move.y) * _t_dist * 0.9 * dt)
 	if move == Vector2.ZERO and Capture.has("capture"):
 		pass
 	elif Input.is_physical_key_pressed(KEY_Q):
